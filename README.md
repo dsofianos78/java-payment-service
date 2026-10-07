@@ -29,6 +29,7 @@ git checkout episode-01-working-payment
 | # | Episode | Tag |
 |---|---|---|
 | 01 | [Create a Working Payment](docs/episodes/01-working-payment.md) | `episode-01-working-payment` |
+| 02 | [Establish the Primary Port Boundary](docs/episodes/02-primary-port-boundary.md) | `episode-02-primary-port-boundary` |
 
 ## License
 

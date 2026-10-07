@@ -1,6 +1,6 @@
 package com.example.payment.infrastructure.adapter.primary.web;
 
-import com.example.payment.application.service.command.CreatePaymentService;
+import com.example.payment.application.port.primary.CreatePaymentUseCase;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -15,17 +15,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/payments")
 public class PaymentController {
 
-	// Episode 01: depends on the concrete service. Episode 02 inverts this onto CreatePaymentUseCase.
-	private final CreatePaymentService createPaymentService;
+	// Depends on the primary port, never on the service that implements it.
+	private final CreatePaymentUseCase createPaymentUseCase;
 
-	public PaymentController(CreatePaymentService createPaymentService) {
-		this.createPaymentService = createPaymentService;
+	public PaymentController(CreatePaymentUseCase createPaymentUseCase) {
+		this.createPaymentUseCase = createPaymentUseCase;
 	}
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public PaymentResponse create(@Valid @RequestBody PaymentRequest request) {
-		return PaymentResponse.from(createPaymentService.createPayment(request.toCommand()));
+		return PaymentResponse.from(createPaymentUseCase.createPayment(request.toCommand()));
 	}
 
 	// ponytail: domain rule violations -> 400; Episode 08 replaces this with application exceptions + a dedicated handler

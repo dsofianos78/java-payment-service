@@ -1,6 +1,6 @@
 # Episode 01 — Create a Working Payment
 
-Git tag: `episode-01-working-payment` · Next: Episode 02 — Establish the Primary Port Boundary
+Git tag: `episode-01-working-payment` · Next: [Episode 02 — Establish the Primary Port Boundary](02-primary-port-boundary.md)
 
 ## Goal
 
