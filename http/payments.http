@@ -51,3 +51,27 @@ Content-Type: application/json
   "currency": "EUR",
   "reference": "Invoice 12345"
 }
+
+### Episode 03 — unknown source account -> 400
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-99999",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}
+
+### Episode 03 — closed destination account -> 400
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-90001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}

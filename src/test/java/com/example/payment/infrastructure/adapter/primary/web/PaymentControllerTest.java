@@ -52,6 +52,21 @@ class PaymentControllerTest {
 	}
 
 	@Test
+	void rejectsInactiveAccountWith400() throws Exception {
+		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("""
+						{
+						  "sourceAccountId": "ACC-10001",
+						  "destinationAccountId": "ACC-90001",
+						  "amount": 250.00,
+						  "currency": "EUR",
+						  "reference": "Invoice 12345"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.detail").value("Destination account ACC-90001 is not active"));
+	}
+
+	@Test
 	void rejectsMissingFieldsWith400() throws Exception {
 		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("{}"))
 				.andExpect(status().isBadRequest());
