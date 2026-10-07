@@ -1,9 +1,11 @@
 package com.example.payment.application.service.command;
 
+import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.AccountStatus;
+import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -29,13 +31,23 @@ class CreatePaymentServiceTest {
 
 	private final List<AccountId> enquiries = new ArrayList<>();
 
-	// PaymentRepository has one method too, so a list is a complete fake store.
+	// Creating a payment only ever saves, so the fake store is a list and reading from it is a bug.
 	private final List<Payment> saved = new ArrayList<>();
 
 	private final CreatePaymentService service = new CreatePaymentService(accountId -> {
 		enquiries.add(accountId);
 		return Optional.ofNullable(accounts.get(accountId.value()));
-	}, saved::add);
+	}, new PaymentRepository() {
+		@Override
+		public void save(Payment payment) {
+			saved.add(payment);
+		}
+
+		@Override
+		public Optional<Payment> findById(PaymentId paymentId) {
+			throw new UnsupportedOperationException("CreatePaymentService should not read payments");
+		}
+	});
 
 	@Test
 	void createsPaymentWhenBothAccountsAreActive() {

@@ -1,6 +1,6 @@
 # Episode 04 — Persist Payments
 
-Git tag: `episode-04-persistence` · Previous: [Episode 03 — Account Enquiry](03-account-enquiry.md) · Next: Episode 05 — Query a Payment
+Git tag: `episode-04-persistence` · Previous: [Episode 03 — Account Enquiry](03-account-enquiry.md) · Next: [Episode 05 — Query a Payment](05-query-payment.md)
 
 ## Goal
 

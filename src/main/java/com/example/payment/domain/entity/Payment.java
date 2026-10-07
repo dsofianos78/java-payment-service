@@ -44,6 +44,15 @@ public class Payment {
 				amount, reference, PaymentStatus.CREATED);
 	}
 
+	/**
+	 * Rebuilds a payment that already exists, e.g. one read from storage.
+	 * It keeps its id and status, and still has to pass every invariant.
+	 */
+	public static Payment restore(PaymentId id, AccountId sourceAccountId, AccountId destinationAccountId,
+			Money amount, PaymentReference reference, PaymentStatus status) {
+		return new Payment(id, sourceAccountId, destinationAccountId, amount, reference, status);
+	}
+
 	public PaymentId id() {
 		return id;
 	}

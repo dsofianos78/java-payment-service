@@ -5,6 +5,7 @@ import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
+import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Runs against real PostgreSQL with the Flyway schema, so it proves the
- * entity, the mapping and the migration agree.
+ * entity, the mapping in both directions and the migration agree.
  */
 @DataJpaTest
 @Import({TestcontainersConfiguration.class, PaymentPersistenceAdapter.class})
@@ -46,5 +47,23 @@ class PaymentPersistenceAdapterTest {
 		assertThat(row.getCurrency()).isEqualTo("EUR");
 		assertThat(row.getReference()).isEqualTo("Invoice 12345");
 		assertThat(row.getStatus()).isEqualTo("CREATED");
+	}
+
+	@Test
+	void readsBackTheSamePayment() {
+		Payment payment = Payment.create(new AccountId("ACC-10001"), new AccountId("ACC-20001"),
+				new Money(new BigDecimal("250.00"), Currency.EUR), new PaymentReference("Invoice 12345"));
+		adapter.save(payment);
+		entityManager.flush();
+		entityManager.clear();
+
+		Payment found = adapter.findById(payment.id()).orElseThrow();
+
+		assertThat(found).usingRecursiveComparison().isEqualTo(payment);
+	}
+
+	@Test
+	void findsNothingForAnUnknownId() {
+		assertThat(adapter.findById(PaymentId.newId())).isEmpty();
 	}
 }

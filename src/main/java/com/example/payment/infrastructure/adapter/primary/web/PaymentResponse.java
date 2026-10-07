@@ -1,5 +1,6 @@
 package com.example.payment.infrastructure.adapter.primary.web;
 
+import com.example.payment.application.usecase.query.GetPaymentResult;
 import com.example.payment.domain.entity.Payment;
 
 import java.math.BigDecimal;
@@ -22,5 +23,16 @@ public record PaymentResponse(
 				payment.amount().currency().name(),
 				payment.reference().value(),
 				payment.status().name());
+	}
+
+	static PaymentResponse from(GetPaymentResult result) {
+		return new PaymentResponse(
+				result.paymentId(),
+				result.sourceAccountId(),
+				result.destinationAccountId(),
+				result.amount(),
+				result.currency(),
+				result.reference(),
+				result.status());
 	}
 }

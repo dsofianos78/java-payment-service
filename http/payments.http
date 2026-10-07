@@ -75,3 +75,25 @@ Content-Type: application/json
   "currency": "EUR",
   "reference": "Invoice 12345"
 }
+
+### Episode 05 — create a payment to read back -> 201
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-30001",
+  "amount": 99.95,
+  "currency": "GBP",
+  "reference": "Rent October"
+}
+
+### Episode 05 — read it back -> 200 (paste the paymentId from the response above)
+@paymentId = 00000000-0000-0000-0000-000000000000
+GET {{baseUrl}}/payments/{{paymentId}}
+
+### Episode 05 — unknown payment -> 404
+GET {{baseUrl}}/payments/00000000-0000-0000-0000-000000000000
+
+### Episode 05 — malformed payment id -> 400 "Invalid payment id"
+GET {{baseUrl}}/payments/not-a-uuid

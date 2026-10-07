@@ -2,7 +2,10 @@ package com.example.payment.infrastructure.adapter.secondary.persistence;
 
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.valueobject.PaymentId;
 import org.springframework.stereotype.Component;
+
+import java.util.Optional;
 
 /**
  * Implements the application's PaymentRepository with JPA and PostgreSQL.
@@ -21,5 +24,10 @@ public class PaymentPersistenceAdapter implements PaymentRepository {
 	@Override
 	public void save(Payment payment) {
 		jpaRepository.save(PaymentEntityMapper.toEntity(payment));
+	}
+
+	@Override
+	public Optional<Payment> findById(PaymentId paymentId) {
+		return jpaRepository.findById(paymentId.value()).map(PaymentEntityMapper::toDomain);
 	}
 }

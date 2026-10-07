@@ -11,7 +11,10 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -48,6 +51,45 @@ class PaymentControllerTest {
 		String paymentId = JsonPath.read(response, "$.paymentId");
 		assertThat(jdbc.sql("SELECT status FROM payment WHERE id = ?::uuid").param(paymentId).query(String.class).single())
 				.isEqualTo("CREATED");
+	}
+
+	@Test
+	void createdPaymentCanBeReadBack() throws Exception {
+		String response = mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("""
+						{
+						  "sourceAccountId": "ACC-10001",
+						  "destinationAccountId": "ACC-30001",
+						  "amount": 99.95,
+						  "currency": "GBP",
+						  "reference": "Rent October"
+						}
+						"""))
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		String paymentId = JsonPath.read(response, "$.paymentId");
+
+		mockMvc.perform(get("/payments/{id}", paymentId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.paymentId").value(paymentId))
+				.andExpect(jsonPath("$.sourceAccountId").value("ACC-10001"))
+				.andExpect(jsonPath("$.destinationAccountId").value("ACC-30001"))
+				.andExpect(jsonPath("$.amount").value(99.95))
+				.andExpect(jsonPath("$.currency").value("GBP"))
+				.andExpect(jsonPath("$.reference").value("Rent October"))
+				.andExpect(jsonPath("$.status").value("CREATED"));
+	}
+
+	@Test
+	void unknownPaymentIs404() throws Exception {
+		mockMvc.perform(get("/payments/{id}", UUID.randomUUID()))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void malformedPaymentIdIs400() throws Exception {
+		mockMvc.perform(get("/payments/not-a-uuid"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.detail").value("Invalid payment id: not-a-uuid"));
 	}
 
 	@Test
