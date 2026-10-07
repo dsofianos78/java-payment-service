@@ -1,0 +1,17 @@
+# Local PostgreSQL for ./mvnw spring-boot:run. Spring Boot starts it automatically
+# and stops it on shutdown; the named volume keeps the data between restarts.
+# Example credentials for a local container only.
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: payments
+    ports:
+      - "5432"
+    volumes:
+      - payments-data:/var/lib/postgresql
+
+volumes:
+  payments-data:

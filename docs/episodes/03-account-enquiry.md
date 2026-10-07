@@ -1,6 +1,6 @@
 # Episode 03 — Account Enquiry
 
-Git tag: `episode-03-account-enquiry` · Previous: [Episode 02 — Establish the Primary Port Boundary](02-primary-port-boundary.md) · Next: Episode 04 — Persist Payments
+Git tag: `episode-03-account-enquiry` · Previous: [Episode 02 — Establish the Primary Port Boundary](02-primary-port-boundary.md) · Next: [Episode 04 — Persist Payments](04-persist-payments.md)
 
 ## Goal
 

@@ -29,10 +29,13 @@ class CreatePaymentServiceTest {
 
 	private final List<AccountId> enquiries = new ArrayList<>();
 
+	// PaymentRepository has one method too, so a list is a complete fake store.
+	private final List<Payment> saved = new ArrayList<>();
+
 	private final CreatePaymentService service = new CreatePaymentService(accountId -> {
 		enquiries.add(accountId);
 		return Optional.ofNullable(accounts.get(accountId.value()));
-	});
+	}, saved::add);
 
 	@Test
 	void createsPaymentWhenBothAccountsAreActive() {
@@ -40,6 +43,7 @@ class CreatePaymentServiceTest {
 
 		assertThat(payment.status()).isEqualTo(PaymentStatus.CREATED);
 		assertThat(enquiries).containsExactly(new AccountId("ACC-ACTIVE-1"), new AccountId("ACC-ACTIVE-2"));
+		assertThat(saved).containsExactly(payment);
 	}
 
 	@ParameterizedTest
@@ -53,6 +57,8 @@ class CreatePaymentServiceTest {
 		assertThatIllegalArgumentException()
 				.isThrownBy(() -> service.createPayment(command(source, destination, "250.00", "EUR")))
 				.withMessage(message);
+
+		assertThat(saved).isEmpty();
 	}
 
 	@Test
@@ -61,6 +67,7 @@ class CreatePaymentServiceTest {
 				.isThrownBy(() -> service.createPayment(command("ACC-ACTIVE-1", "ACC-ACTIVE-2", "250.00", "JPY")));
 
 		assertThat(enquiries).isEmpty();
+		assertThat(saved).isEmpty();
 	}
 
 	private static CreatePaymentCommand command(String source, String destination, String amount, String currency) {

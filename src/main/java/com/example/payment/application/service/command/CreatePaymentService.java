@@ -2,6 +2,7 @@ package com.example.payment.application.service.command;
 
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
 import com.example.payment.application.port.secondary.AccountEnquiryPort;
+import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
@@ -15,9 +16,11 @@ import org.springframework.stereotype.Service;
 public class CreatePaymentService implements CreatePaymentUseCase {
 
 	private final AccountEnquiryPort accountEnquiryPort;
+	private final PaymentRepository paymentRepository;
 
-	public CreatePaymentService(AccountEnquiryPort accountEnquiryPort) {
+	public CreatePaymentService(AccountEnquiryPort accountEnquiryPort, PaymentRepository paymentRepository) {
 		this.accountEnquiryPort = accountEnquiryPort;
+		this.paymentRepository = paymentRepository;
 	}
 
 	@Override
@@ -31,8 +34,9 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 		requireActive(source, "Source");
 		requireActive(destination, "Destination");
 
-		// ponytail: no persistence yet - the payment lives only for this request (Episode 04 adds PaymentRepository)
-		return Payment.create(source, destination, amount, reference);
+		Payment payment = Payment.create(source, destination, amount, reference);
+		paymentRepository.save(payment);
+		return payment;
 	}
 
 	// ponytail: IllegalArgumentException -> 400 for now; Episode 08 introduces AccountNotFoundException / AccountUnavailableException

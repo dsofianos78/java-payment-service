@@ -9,11 +9,11 @@ data, API contract or credential appears anywhere in this repository.
 
 ## Getting started
 
-Requirements: Java 25. Maven is provided by the wrapper.
+Requirements: Java 25 and Docker. Maven is provided by the wrapper.
 
 ```bash
 ./mvnw verify            # build and run all tests
-./mvnw spring-boot:run   # start on http://localhost:8080
+./mvnw spring-boot:run   # start on http://localhost:8080 (PostgreSQL starts from compose.yaml)
 ```
 
 Example requests for each episode are in [http/payments.http](http/payments.http).
@@ -31,6 +31,7 @@ git checkout episode-01-working-payment
 | 01 | [Create a Working Payment](docs/episodes/01-working-payment.md) | `episode-01-working-payment` |
 | 02 | [Establish the Primary Port Boundary](docs/episodes/02-primary-port-boundary.md) | `episode-02-primary-port-boundary` |
 | 03 | [Account Enquiry](docs/episodes/03-account-enquiry.md) | `episode-03-account-enquiry` |
+| 04 | [Persist Payments](docs/episodes/04-persist-payments.md) | `episode-04-persistence` |
 
 ## License
 
