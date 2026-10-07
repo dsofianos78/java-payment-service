@@ -1,0 +1,53 @@
+# Manual API calls, grown episode by episode.
+# Run with IntelliJ HTTP Client or the VS Code "REST Client" extension
+# against a running app: ./mvnw spring-boot:run
+
+@baseUrl = http://localhost:8080
+
+### Episode 01 — create payment -> 201
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}
+
+### Episode 01 — unsupported currency -> 400
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "JPY",
+  "reference": "Invoice 12345"
+}
+
+### Episode 01 — same source and destination -> 400
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-10001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}
+
+### Episode 01 — non-positive amount -> 400
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 0,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}
