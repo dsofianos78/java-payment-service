@@ -1,6 +1,6 @@
 # Episode 02 — Establish the Primary Port Boundary
 
-Git tag: `episode-02-primary-port-boundary` · Previous: [Episode 01 — Create a Working Payment](01-working-payment.md) · Next: [Episode 03 — Account Enquiry](03-account-enquiry.md)
+Git tag: `episode-02-primary-port` · Previous: [Episode 01 — Create a Working Payment](01-working-payment.md) · Next: [Episode 03 — Account Enquiry](03-account-enquiry.md)
 
 ## Goal
 
