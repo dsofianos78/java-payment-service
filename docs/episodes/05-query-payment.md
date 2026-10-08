@@ -1,6 +1,6 @@
 # Episode 05 — Query a Payment
 
-Git tag: `episode-05-payment-query` · Previous: [Episode 04 — Persist Payments](04-persist-payments.md) · Next: Episode 06 — Payment Validation
+Git tag: `episode-05-payment-query` · Previous: [Episode 04 — Persist Payments](04-persist-payments.md) · Next: [Episode 06 — Payment Validation](06-payment-validation.md)
 
 ## Goal
 

@@ -97,3 +97,27 @@ GET {{baseUrl}}/payments/00000000-0000-0000-0000-000000000000
 
 ### Episode 05 — malformed payment id -> 400 "Invalid payment id"
 GET {{baseUrl}}/payments/not-a-uuid
+
+### Episode 06 — amount exactly at the limit -> 201
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 10000.00,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}
+
+### Episode 06 — amount over the limit -> 400 "Payment amount must not exceed 10000.00 EUR"
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 10000.01,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}

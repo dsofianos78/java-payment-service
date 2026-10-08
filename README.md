@@ -33,6 +33,7 @@ git checkout episode-01-working-payment
 | 03 | [Account Enquiry](docs/episodes/03-account-enquiry.md) | `episode-03-account-enquiry` |
 | 04 | [Persist Payments](docs/episodes/04-persist-payments.md) | `episode-04-persistence` |
 | 05 | [Query a Payment](docs/episodes/05-query-payment.md) | `episode-05-payment-query` |
+| 06 | [Payment Validation](docs/episodes/06-payment-validation.md) | `episode-06-validation` |
 
 ## License
 

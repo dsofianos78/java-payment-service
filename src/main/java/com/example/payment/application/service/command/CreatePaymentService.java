@@ -1,12 +1,12 @@
 package com.example.payment.application.service.command;
 
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
-import com.example.payment.application.port.secondary.AccountEnquiryPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
+import com.example.payment.application.validation.AccountStateValidator;
+import com.example.payment.application.validation.PaymentAmountLimitValidator;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
-import com.example.payment.domain.valueobject.AccountStatus;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentReference;
@@ -15,36 +15,31 @@ import org.springframework.stereotype.Service;
 @Service
 public class CreatePaymentService implements CreatePaymentUseCase {
 
-	private final AccountEnquiryPort accountEnquiryPort;
+	private final PaymentAmountLimitValidator amountLimitValidator;
+	private final AccountStateValidator accountStateValidator;
 	private final PaymentRepository paymentRepository;
 
-	public CreatePaymentService(AccountEnquiryPort accountEnquiryPort, PaymentRepository paymentRepository) {
-		this.accountEnquiryPort = accountEnquiryPort;
+	public CreatePaymentService(PaymentAmountLimitValidator amountLimitValidator,
+			AccountStateValidator accountStateValidator, PaymentRepository paymentRepository) {
+		this.amountLimitValidator = amountLimitValidator;
+		this.accountStateValidator = accountStateValidator;
 		this.paymentRepository = paymentRepository;
 	}
 
 	@Override
 	public Payment createPayment(CreatePaymentCommand command) {
-		// Local checks first: an invalid request never reaches the account system.
-		AccountId source = new AccountId(command.sourceAccountId());
-		AccountId destination = new AccountId(command.destinationAccountId());
-		Money amount = new Money(command.amount(), Currency.of(command.currency()));
-		PaymentReference reference = new PaymentReference(command.reference());
+		// Domain invariants: the value objects and the aggregate refuse to exist in an invalid state.
+		Payment payment = Payment.create(
+				new AccountId(command.sourceAccountId()),
+				new AccountId(command.destinationAccountId()),
+				new Money(command.amount(), Currency.of(command.currency())),
+				new PaymentReference(command.reference()));
 
-		requireActive(source, "Source");
-		requireActive(destination, "Destination");
+		// Application validation: cheap local policy first, so a rejected request never reaches the account system.
+		amountLimitValidator.validate(payment.amount());
+		accountStateValidator.validate(payment.sourceAccountId(), payment.destinationAccountId());
 
-		Payment payment = Payment.create(source, destination, amount, reference);
 		paymentRepository.save(payment);
 		return payment;
-	}
-
-	// ponytail: IllegalArgumentException -> 400 for now; Episode 08 introduces AccountNotFoundException / AccountUnavailableException
-	private void requireActive(AccountId accountId, String role) {
-		AccountStatus status = accountEnquiryPort.findStatus(accountId)
-				.orElseThrow(() -> new IllegalArgumentException(role + " account " + accountId + " does not exist"));
-		if (status != AccountStatus.ACTIVE) {
-			throw new IllegalArgumentException(role + " account " + accountId + " is not active");
-		}
 	}
 }

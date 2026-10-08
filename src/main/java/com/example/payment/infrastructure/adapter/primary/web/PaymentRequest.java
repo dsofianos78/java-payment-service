@@ -7,8 +7,8 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 
 /**
- * HTTP request shape. Checks only that the fields are present;
- * business rules live in the domain.
+ * HTTP request shape. Checks only that the fields are present; business
+ * rules live in the domain and in application/validation.
  */
 public record PaymentRequest(
 		@NotBlank String sourceAccountId,

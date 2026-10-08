@@ -123,6 +123,21 @@ class PaymentControllerTest {
 	}
 
 	@Test
+	void rejectsAmountOverTheLimitWith400() throws Exception {
+		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("""
+						{
+						  "sourceAccountId": "ACC-10001",
+						  "destinationAccountId": "ACC-20001",
+						  "amount": 10000.01,
+						  "currency": "EUR",
+						  "reference": "Invoice 12345"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.detail").value("Payment amount must not exceed 10000.00 EUR"));
+	}
+
+	@Test
 	void rejectsMissingFieldsWith400() throws Exception {
 		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("{}"))
 				.andExpect(status().isBadRequest());
