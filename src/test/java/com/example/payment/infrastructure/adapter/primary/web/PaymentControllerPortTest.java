@@ -1,11 +1,16 @@
 package com.example.payment.infrastructure.adapter.primary.web;
 
+import com.example.payment.application.exception.AccountNotFoundException;
+import com.example.payment.application.exception.AccountUnavailableException;
+import com.example.payment.application.exception.PaymentNotFoundException;
+import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.usecase.query.GetPaymentResult;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
+import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -13,7 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
-import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,24 +33,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class PaymentControllerPortTest {
 
+	private static final String VALID_REQUEST = """
+			{
+			  "sourceAccountId": "ACC-10001",
+			  "destinationAccountId": "ACC-20001",
+			  "amount": 250.00,
+			  "currency": "EUR",
+			  "reference": "Invoice 12345"
+			}
+			""";
+
 	@Test
 	void translatesRequestIntoCommandAndPaymentIntoResponse() throws Exception {
 		AtomicReference<CreatePaymentCommand> received = new AtomicReference<>();
-		MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new PaymentController(command -> {
+		MockMvc mockMvc = mockMvc(new PaymentController(command -> {
 			received.set(command);
 			return Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
 					new Money(new BigDecimal("9.99"), Currency.GBP), new PaymentReference("From stub"));
-		}, query -> Optional.empty())).build();
+		}, query -> { throw new AssertionError("not a query"); }));
 
-		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("""
-						{
-						  "sourceAccountId": "ACC-10001",
-						  "destinationAccountId": "ACC-20001",
-						  "amount": 250.00,
-						  "currency": "EUR",
-						  "reference": "Invoice 12345"
-						}
-						"""))
+		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.sourceAccountId").value("ACC-1"))
 				.andExpect(jsonPath("$.currency").value("GBP"))
@@ -59,15 +66,56 @@ class PaymentControllerPortTest {
 	void passesThePathIdAsAQueryAndMapsTheResult() throws Exception {
 		GetPaymentResult stored = new GetPaymentResult("pay-1", "ACC-1", "ACC-2",
 				new BigDecimal("9.99"), "GBP", "From stub", "CREATED");
-		MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new PaymentController(
+		MockMvc mockMvc = mockMvc(new PaymentController(
 				command -> { throw new AssertionError("not a create"); },
-				query -> Optional.of(stored).filter(r -> r.paymentId().equals(query.paymentId())))).build();
+				query -> {
+					assertThat(query.paymentId()).isEqualTo("pay-1");
+					return stored;
+				}));
 
 		mockMvc.perform(get("/payments/pay-1"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.paymentId").value("pay-1"))
 				.andExpect(jsonPath("$.reference").value("From stub"));
-		mockMvc.perform(get("/payments/pay-2"))
-				.andExpect(status().isNotFound());
+	}
+
+	// Every application exception has exactly one HTTP status, and its message becomes the detail.
+	@Test
+	void mapsApplicationExceptionsToHttpStatuses() throws Exception {
+		assertCreateFailsWith(new PaymentValidationException("Unsupported currency: JPY"), 400);
+		assertCreateFailsWith(new AccountNotFoundException("Source", new AccountId("ACC-99999")), 400);
+		assertCreateFailsWith(new AccountUnavailableException(new RuntimeException("connection refused")), 503);
+
+		PaymentId unknown = new PaymentId(UUID.randomUUID());
+		mockMvc(new PaymentController(
+				command -> { throw new AssertionError("not a create"); },
+				query -> { throw new PaymentNotFoundException(unknown); }))
+				.perform(get("/payments/{id}", unknown))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").value("Payment " + unknown + " does not exist"));
+	}
+
+	@Test
+	void doesNotLeakTheCauseOfAnUnavailableAccountSystem() throws Exception {
+		mockMvc(new PaymentController(
+				command -> { throw new AccountUnavailableException(new RuntimeException("10.0.0.7:8089 refused")); },
+				query -> { throw new AssertionError("not a query"); }))
+				.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.detail").value("Account system is unavailable"));
+	}
+
+	private static void assertCreateFailsWith(RuntimeException thrown, int httpStatus) throws Exception {
+		mockMvc(new PaymentController(
+				command -> { throw thrown; },
+				query -> { throw new AssertionError("not a query"); }))
+				.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
+				.andExpect(status().is(httpStatus))
+				.andExpect(jsonPath("$.status").value(httpStatus))
+				.andExpect(jsonPath("$.detail").value(thrown.getMessage()));
+	}
+
+	private static MockMvc mockMvc(PaymentController controller) {
+		return MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new PaymentExceptionHandler()).build();
 	}
 }

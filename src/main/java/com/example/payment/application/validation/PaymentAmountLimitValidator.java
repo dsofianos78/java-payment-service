@@ -1,5 +1,6 @@
 package com.example.payment.application.validation;
 
+import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.domain.valueobject.Money;
 import org.springframework.stereotype.Component;
 
@@ -18,7 +19,7 @@ public class PaymentAmountLimitValidator {
 
 	public void validate(Money amount) {
 		if (amount.amount().compareTo(MAX_AMOUNT) > 0) {
-			throw new IllegalArgumentException(
+			throw new PaymentValidationException(
 					"Payment amount must not exceed " + MAX_AMOUNT.toPlainString() + " " + amount.currency());
 		}
 	}

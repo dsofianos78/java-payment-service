@@ -136,3 +136,25 @@ Content-Type: application/json
 
 ### Episode 07 — ask the fake account system directly (WireMock from compose.yaml)
 GET http://localhost:8089/accounts/ACC-80001
+
+### Episode 08 — unknown payment -> 404 problem details "Payment ... does not exist"
+GET {{baseUrl}}/payments/00000000-0000-0000-0000-000000000000
+
+### Episode 08 — missing fields -> 400 problem details, same shape as our own errors
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{}
+
+### Episode 08 — account system down -> 503 "Account system is unavailable"
+# First run: docker compose stop account-system   (afterwards: docker compose start account-system)
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}

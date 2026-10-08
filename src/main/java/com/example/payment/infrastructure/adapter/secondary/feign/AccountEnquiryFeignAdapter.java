@@ -1,5 +1,6 @@
 package com.example.payment.infrastructure.adapter.secondary.feign;
 
+import com.example.payment.application.exception.AccountUnavailableException;
 import com.example.payment.application.port.secondary.AccountEnquiryPort;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.AccountStatus;
@@ -22,7 +23,7 @@ public class AccountEnquiryFeignAdapter implements AccountEnquiryPort {
 		this.accountClient = accountClient;
 	}
 
-	// ponytail: other HTTP errors and timeouts surface as FeignException -> 500; Episode 08 maps them to AccountUnavailableException, Episode 16 adds timeouts and retries
+	// ponytail: Feign default timeouts, no retries; Episode 16 adds them
 	@Override
 	public Optional<AccountStatus> findStatus(AccountId accountId) {
 		try {
@@ -30,6 +31,10 @@ public class AccountEnquiryFeignAdapter implements AccountEnquiryPort {
 		}
 		catch (FeignException.NotFound e) {
 			return Optional.empty();
+		}
+		// 5xx, timeout, connection refused: the account system gave no answer, which is not "no such account".
+		catch (FeignException e) {
+			throw new AccountUnavailableException(e);
 		}
 	}
 

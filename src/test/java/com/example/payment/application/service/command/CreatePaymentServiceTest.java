@@ -1,5 +1,7 @@
 package com.example.payment.application.service.command;
 
+import com.example.payment.application.exception.AccountNotFoundException;
+import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.validation.AccountStateValidator;
@@ -20,7 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 class CreatePaymentServiceTest {
 
@@ -64,12 +66,23 @@ class CreatePaymentServiceTest {
 	@ParameterizedTest
 	@CsvSource({
 			"ACC-UNKNOWN, ACC-ACTIVE-2, Source account ACC-UNKNOWN does not exist",
-			"ACC-ACTIVE-1, ACC-UNKNOWN, Destination account ACC-UNKNOWN does not exist",
+			"ACC-ACTIVE-1, ACC-UNKNOWN, Destination account ACC-UNKNOWN does not exist"
+	})
+	void rejectsUnknownAccounts(String source, String destination, String message) {
+		assertThatExceptionOfType(AccountNotFoundException.class)
+				.isThrownBy(() -> service.createPayment(command(source, destination, "250.00", "EUR")))
+				.withMessage(message);
+
+		assertThat(saved).isEmpty();
+	}
+
+	@ParameterizedTest
+	@CsvSource({
 			"ACC-BLOCKED, ACC-ACTIVE-2, Source account ACC-BLOCKED is not active",
 			"ACC-ACTIVE-1, ACC-CLOSED, Destination account ACC-CLOSED is not active"
 	})
-	void rejectsUnknownOrInactiveAccounts(String source, String destination, String message) {
-		assertThatIllegalArgumentException()
+	void rejectsInactiveAccounts(String source, String destination, String message) {
+		assertThatExceptionOfType(PaymentValidationException.class)
 				.isThrownBy(() -> service.createPayment(command(source, destination, "250.00", "EUR")))
 				.withMessage(message);
 
@@ -83,7 +96,8 @@ class CreatePaymentServiceTest {
 		assertThat(saved).containsExactly(payment);
 	}
 
-	// Domain invariants and local policy both fail before the account system is asked anything.
+	// Domain invariants and local policy both fail before the account system is asked anything,
+	// and both reach the caller as the same application exception.
 	@ParameterizedTest
 	@CsvSource({
 			"ACC-ACTIVE-1, ACC-ACTIVE-2, 250.00, JPY, Unsupported currency: JPY",
@@ -92,7 +106,7 @@ class CreatePaymentServiceTest {
 	})
 	void doesNotEnquireAboutAccountsForAnInvalidRequest(String source, String destination, String amount,
 			String currency, String message) {
-		assertThatIllegalArgumentException()
+		assertThatExceptionOfType(PaymentValidationException.class)
 				.isThrownBy(() -> service.createPayment(command(source, destination, amount, currency)))
 				.withMessage(message);
 

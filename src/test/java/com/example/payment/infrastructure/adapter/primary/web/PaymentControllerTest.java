@@ -97,8 +97,11 @@ class PaymentControllerTest {
 
 	@Test
 	void unknownPaymentIs404() throws Exception {
-		mockMvc.perform(get("/payments/{id}", UUID.randomUUID()))
-				.andExpect(status().isNotFound());
+		UUID unknown = UUID.randomUUID();
+
+		mockMvc.perform(get("/payments/{id}", unknown))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").value("Payment " + unknown + " does not exist"));
 	}
 
 	@Test
@@ -171,6 +174,8 @@ class PaymentControllerTest {
 	@Test
 	void rejectsMissingFieldsWith400() throws Exception {
 		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("{}"))
-				.andExpect(status().isBadRequest());
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.status").value(400))
+				.andExpect(jsonPath("$.title").value("Bad Request"));
 	}
 }

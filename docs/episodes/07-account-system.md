@@ -1,6 +1,6 @@
 # Episode 07 — External Account System
 
-Git tag: `episode-07-account-system` · Previous: [Episode 06 — Payment Validation](06-payment-validation.md) · Next: Episode 08 — Error Handling
+Git tag: `episode-07-account-system` · Previous: [Episode 06 — Payment Validation](06-payment-validation.md) · Next: [Episode 08 — Error Handling](08-error-handling.md)
 
 ## Goal
 

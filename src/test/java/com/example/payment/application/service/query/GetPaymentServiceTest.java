@@ -1,5 +1,7 @@
 package com.example.payment.application.service.query;
 
+import com.example.payment.application.exception.PaymentNotFoundException;
+import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.query.GetPaymentQuery;
 import com.example.payment.application.usecase.query.GetPaymentResult;
@@ -16,7 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 class GetPaymentServiceTest {
 
@@ -38,20 +40,24 @@ class GetPaymentServiceTest {
 
 	@Test
 	void returnsTheStoredPaymentAsAResult() {
-		GetPaymentResult result = service.getPayment(new GetPaymentQuery(stored.id().toString())).orElseThrow();
+		GetPaymentResult result = service.getPayment(new GetPaymentQuery(stored.id().toString()));
 
 		assertThat(result).isEqualTo(new GetPaymentResult(stored.id().toString(), "ACC-1", "ACC-2",
 				new BigDecimal("250.00"), "EUR", "Invoice 12345", "CREATED"));
 	}
 
 	@Test
-	void returnsEmptyForAnUnknownPayment() {
-		assertThat(service.getPayment(new GetPaymentQuery(UUID.randomUUID().toString()))).isEmpty();
+	void rejectsAnUnknownPayment() {
+		UUID unknown = UUID.randomUUID();
+
+		assertThatExceptionOfType(PaymentNotFoundException.class)
+				.isThrownBy(() -> service.getPayment(new GetPaymentQuery(unknown.toString())))
+				.withMessage("Payment " + unknown + " does not exist");
 	}
 
 	@Test
 	void rejectsAMalformedPaymentId() {
-		assertThatIllegalArgumentException()
+		assertThatExceptionOfType(PaymentValidationException.class)
 				.isThrownBy(() -> service.getPayment(new GetPaymentQuery("not-a-uuid")))
 				.withMessage("Invalid payment id: not-a-uuid");
 	}

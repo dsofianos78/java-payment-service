@@ -35,6 +35,7 @@ git checkout episode-01-working-payment
 | 05 | [Query a Payment](docs/episodes/05-query-payment.md) | `episode-05-payment-query` |
 | 06 | [Payment Validation](docs/episodes/06-payment-validation.md) | `episode-06-validation` |
 | 07 | [External Account System](docs/episodes/07-account-system.md) | `episode-07-account-system` |
+| 08 | [Error Handling](docs/episodes/08-error-handling.md) | `episode-08-error-handling` |
 
 ## License
 

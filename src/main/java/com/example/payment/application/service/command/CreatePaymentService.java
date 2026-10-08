@@ -1,5 +1,6 @@
 package com.example.payment.application.service.command;
 
+import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
@@ -29,11 +30,18 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 	@Override
 	public Payment createPayment(CreatePaymentCommand command) {
 		// Domain invariants: the value objects and the aggregate refuse to exist in an invalid state.
-		Payment payment = Payment.create(
-				new AccountId(command.sourceAccountId()),
-				new AccountId(command.destinationAccountId()),
-				new Money(command.amount(), Currency.of(command.currency())),
-				new PaymentReference(command.reference()));
+		// Their IllegalArgumentException is translated here, so callers only ever see application exceptions.
+		Payment payment;
+		try {
+			payment = Payment.create(
+					new AccountId(command.sourceAccountId()),
+					new AccountId(command.destinationAccountId()),
+					new Money(command.amount(), Currency.of(command.currency())),
+					new PaymentReference(command.reference()));
+		}
+		catch (IllegalArgumentException e) {
+			throw new PaymentValidationException(e.getMessage(), e);
+		}
 
 		// Application validation: cheap local policy first, so a rejected request never reaches the account system.
 		amountLimitValidator.validate(payment.amount());

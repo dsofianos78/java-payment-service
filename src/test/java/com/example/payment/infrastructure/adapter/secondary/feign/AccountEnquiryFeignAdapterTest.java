@@ -1,10 +1,10 @@
 package com.example.payment.infrastructure.adapter.secondary.feign;
 
+import com.example.payment.application.exception.AccountUnavailableException;
 import com.example.payment.config.FeignConfiguration;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.AccountStatus;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
-import feign.FeignException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -79,6 +79,7 @@ class AccountEnquiryFeignAdapterTest {
 	void serverErrorIsNotMistakenForUnknownAccount() {
 		accountSystem.stubFor(get("/accounts/ACC-1").willReturn(aResponse().withStatus(503)));
 
-		assertThatThrownBy(() -> adapter.findStatus(new AccountId("ACC-1"))).isInstanceOf(FeignException.class);
+		assertThatThrownBy(() -> adapter.findStatus(new AccountId("ACC-1"))).isInstanceOf(AccountUnavailableException.class)
+				.hasMessage("Account system is unavailable");
 	}
 }

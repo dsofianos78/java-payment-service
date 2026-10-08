@@ -1,5 +1,7 @@
 package com.example.payment.application.validation;
 
+import com.example.payment.application.exception.AccountNotFoundException;
+import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.secondary.AccountEnquiryPort;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.AccountStatus;
@@ -23,12 +25,11 @@ public class AccountStateValidator {
 		requireActive(destination, "Destination");
 	}
 
-	// ponytail: IllegalArgumentException -> 400 for now; Episode 08 introduces AccountNotFoundException / AccountUnavailableException
 	private void requireActive(AccountId accountId, String role) {
 		AccountStatus status = accountEnquiryPort.findStatus(accountId)
-				.orElseThrow(() -> new IllegalArgumentException(role + " account " + accountId + " does not exist"));
+				.orElseThrow(() -> new AccountNotFoundException(role, accountId));
 		if (status != AccountStatus.ACTIVE) {
-			throw new IllegalArgumentException(role + " account " + accountId + " is not active");
+			throw new PaymentValidationException(role + " account " + accountId + " is not active");
 		}
 	}
 }
