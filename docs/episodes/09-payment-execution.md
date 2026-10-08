@@ -1,6 +1,6 @@
 # Episode 09 — Execute Payment
 
-Git tag: `episode-09-payment-execution` · Previous: [Episode 08 — Error Handling](08-error-handling.md) · Next: Episode 10 — Idempotency
+Git tag: `episode-09-payment-execution` · Previous: [Episode 08 — Error Handling](08-error-handling.md) · Next: [Episode 10 — Idempotency](10-idempotency.md)
 
 ## Goal
 
@@ -143,8 +143,7 @@ normal business result, not an HTTP error, and the client reads `status`.
 ## Known shortcuts
 
 - **Two concurrent executes of the same payment can both pass.** Both load it
-  as `CREATED` before either saves. Episode 10 (idempotency) and Episode 13
-  (transactions) close this.
+  as `CREATED` before either saves. Episode 13 (transactions) closes this.
 - **If the payment system throws, the payment stays `PROCESSING`.** That's
   the safe state, but nothing picks it up again yet. Episode 16 (resilience).
 - **Create and execute are two calls.** Episode 17 runs execution

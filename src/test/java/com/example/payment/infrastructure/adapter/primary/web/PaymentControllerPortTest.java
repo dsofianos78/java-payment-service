@@ -2,6 +2,8 @@ package com.example.payment.infrastructure.adapter.primary.web;
 
 import com.example.payment.application.exception.AccountNotFoundException;
 import com.example.payment.application.exception.AccountUnavailableException;
+import com.example.payment.application.exception.IdempotencyKeyInProgressException;
+import com.example.payment.application.exception.IdempotencyKeyMismatchException;
 import com.example.payment.application.exception.InvalidPaymentStateException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
@@ -56,14 +58,14 @@ class PaymentControllerPortTest {
 					new Money(new BigDecimal("9.99"), Currency.GBP), new PaymentReference("From stub"));
 		}, query -> { throw new AssertionError("not a query"); }, NO_EXECUTE));
 
-		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
+		mockMvc.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.sourceAccountId").value("ACC-1"))
 				.andExpect(jsonPath("$.currency").value("GBP"))
 				.andExpect(jsonPath("$.reference").value("From stub"));
 
 		assertThat(received.get()).isEqualTo(new CreatePaymentCommand(
-				"ACC-10001", "ACC-20001", new BigDecimal("250.00"), "EUR", "Invoice 12345"));
+				"ACC-10001", "ACC-20001", new BigDecimal("250.00"), "EUR", "Invoice 12345", "key-1"));
 	}
 
 	@Test
@@ -121,6 +123,8 @@ class PaymentControllerPortTest {
 		assertCreateFailsWith(new PaymentValidationException("Unsupported currency: JPY"), 400);
 		assertCreateFailsWith(new AccountNotFoundException("Source", new AccountId("ACC-99999")), 400);
 		assertCreateFailsWith(new AccountUnavailableException(new RuntimeException("connection refused")), 503);
+		assertCreateFailsWith(new IdempotencyKeyInProgressException(), 409);
+		assertCreateFailsWith(new IdempotencyKeyMismatchException(), 422);
 
 		PaymentId unknown = new PaymentId(UUID.randomUUID());
 		mockMvc(new PaymentController(
@@ -136,7 +140,7 @@ class PaymentControllerPortTest {
 		mockMvc(new PaymentController(
 				command -> { throw new AccountUnavailableException(new RuntimeException("10.0.0.7:8089 refused")); },
 				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE))
-				.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
+				.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
 				.andExpect(status().isServiceUnavailable())
 				.andExpect(jsonPath("$.detail").value("Account system is unavailable"));
 	}
@@ -145,7 +149,7 @@ class PaymentControllerPortTest {
 		mockMvc(new PaymentController(
 				command -> { throw thrown; },
 				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE))
-				.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
+				.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
 				.andExpect(status().is(httpStatus))
 				.andExpect(jsonPath("$.status").value(httpStatus))
 				.andExpect(jsonPath("$.detail").value(thrown.getMessage()));
