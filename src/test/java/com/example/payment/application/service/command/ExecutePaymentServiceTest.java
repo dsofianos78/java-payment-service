@@ -1,0 +1,103 @@
+package com.example.payment.application.service.command;
+
+import com.example.payment.application.exception.InvalidPaymentStateException;
+import com.example.payment.application.exception.PaymentNotFoundException;
+import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.port.secondary.PaymentExecutionPort.Outcome;
+import com.example.payment.application.port.secondary.PaymentRepository;
+import com.example.payment.application.usecase.command.ExecutePaymentCommand;
+import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.valueobject.AccountId;
+import com.example.payment.domain.valueobject.Currency;
+import com.example.payment.domain.valueobject.Money;
+import com.example.payment.domain.valueobject.PaymentId;
+import com.example.payment.domain.valueobject.PaymentReference;
+import com.example.payment.domain.valueobject.PaymentStatus;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+
+class ExecutePaymentServiceTest {
+
+	private final Payment stored = Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
+			new Money(new BigDecimal("250.00"), Currency.EUR), new PaymentReference("Invoice 12345"));
+
+	// The statuses the payment had each time it was saved, in order.
+	private final List<PaymentStatus> savedStatuses = new ArrayList<>();
+	private final List<PaymentStatus> statusWhenSent = new ArrayList<>();
+
+	private final PaymentRepository repository = new PaymentRepository() {
+		@Override
+		public void save(Payment payment) {
+			savedStatuses.add(payment.status());
+		}
+
+		@Override
+		public Optional<Payment> findById(PaymentId paymentId) {
+			return Optional.of(stored).filter(p -> p.id().equals(paymentId));
+		}
+	};
+
+	@Test
+	void completesAPaymentThePaymentSystemExecutes() {
+		Payment result = serviceAnswering(Outcome.EXECUTED).executePayment(command(stored.id()));
+
+		assertThat(result.status()).isEqualTo(PaymentStatus.COMPLETED);
+		assertThat(statusWhenSent).containsExactly(PaymentStatus.PROCESSING);
+		// PROCESSING is stored before the payment system is called, so a crash can't leave it looking unsent.
+		assertThat(savedStatuses).containsExactly(PaymentStatus.PROCESSING, PaymentStatus.COMPLETED);
+	}
+
+	@Test
+	void failsAPaymentThePaymentSystemRejects() {
+		Payment result = serviceAnswering(Outcome.REJECTED).executePayment(command(stored.id()));
+
+		assertThat(result.status()).isEqualTo(PaymentStatus.FAILED);
+		assertThat(savedStatuses).containsExactly(PaymentStatus.PROCESSING, PaymentStatus.FAILED);
+	}
+
+	@Test
+	void refusesToExecuteTheSamePaymentTwice() {
+		ExecutePaymentService service = serviceAnswering(Outcome.EXECUTED);
+		service.executePayment(command(stored.id()));
+
+		assertThatExceptionOfType(InvalidPaymentStateException.class)
+				.isThrownBy(() -> service.executePayment(command(stored.id())))
+				.withMessage("Payment " + stored.id() + " is COMPLETED and cannot become AUTHORIZED");
+		assertThat(statusWhenSent).hasSize(1);
+	}
+
+	@Test
+	void rejectsAnUnknownPayment() {
+		UUID unknown = UUID.randomUUID();
+
+		assertThatExceptionOfType(PaymentNotFoundException.class)
+				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(new ExecutePaymentCommand(unknown.toString())));
+		assertThat(statusWhenSent).isEmpty();
+	}
+
+	@Test
+	void rejectsAMalformedPaymentId() {
+		assertThatExceptionOfType(PaymentValidationException.class)
+				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(new ExecutePaymentCommand("not-a-uuid")))
+				.withMessage("Invalid payment id: not-a-uuid");
+	}
+
+	private ExecutePaymentService serviceAnswering(Outcome outcome) {
+		return new ExecutePaymentService(repository, payment -> {
+			statusWhenSent.add(payment.status());
+			return outcome;
+		});
+	}
+
+	private static ExecutePaymentCommand command(PaymentId id) {
+		return new ExecutePaymentCommand(id.toString());
+	}
+}

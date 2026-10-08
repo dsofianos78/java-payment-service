@@ -36,6 +36,7 @@ git checkout episode-01-working-payment
 | 06 | [Payment Validation](docs/episodes/06-payment-validation.md) | `episode-06-validation` |
 | 07 | [External Account System](docs/episodes/07-account-system.md) | `episode-07-account-system` |
 | 08 | [Error Handling](docs/episodes/08-error-handling.md) | `episode-08-error-handling` |
+| 09 | [Execute Payment](docs/episodes/09-payment-execution.md) | `episode-09-payment-execution` |
 
 ## License
 

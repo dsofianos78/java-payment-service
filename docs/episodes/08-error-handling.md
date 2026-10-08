@@ -1,6 +1,6 @@
 # Episode 08 — Error Handling
 
-Git tag: `episode-08-error-handling` · Previous: [Episode 07 — External Account System](07-account-system.md) · Next: Episode 09 — Execute Payment
+Git tag: `episode-08-error-handling` · Previous: [Episode 07 — External Account System](07-account-system.md) · Next: [Episode 09 — Execute Payment](09-payment-execution.md)
 
 ## Goal
 

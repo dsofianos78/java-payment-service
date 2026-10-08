@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 class PaymentTest {
 
@@ -51,6 +52,52 @@ class PaymentTest {
 		assertThatIllegalArgumentException()
 				.isThrownBy(() -> Payment.create(SOURCE, new AccountId(" ACC-10001 "), eur("10"), REFERENCE))
 				.withMessageContaining("must differ");
+	}
+
+	@Test
+	void movesThroughTheLifecycleToCompleted() {
+		Payment payment = Payment.create(SOURCE, DESTINATION, eur("10"), REFERENCE);
+
+		payment.authorize();
+		assertThat(payment.status()).isEqualTo(PaymentStatus.AUTHORIZED);
+		payment.startProcessing();
+		assertThat(payment.status()).isEqualTo(PaymentStatus.PROCESSING);
+		payment.complete();
+		assertThat(payment.status()).isEqualTo(PaymentStatus.COMPLETED);
+	}
+
+	@Test
+	void failsOnlyWhileProcessing() {
+		Payment payment = Payment.create(SOURCE, DESTINATION, eur("10"), REFERENCE);
+		assertThatIllegalStateException().isThrownBy(payment::fail);
+
+		payment.authorize();
+		payment.startProcessing();
+		payment.fail();
+
+		assertThat(payment.status()).isEqualTo(PaymentStatus.FAILED);
+	}
+
+	@Test
+	void cannotSkipAStep() {
+		Payment payment = Payment.create(SOURCE, DESTINATION, eur("10"), REFERENCE);
+
+		assertThatIllegalStateException().isThrownBy(payment::startProcessing)
+				.withMessage("Payment " + payment.id() + " is CREATED and cannot become PROCESSING");
+		assertThatIllegalStateException().isThrownBy(payment::complete);
+		assertThat(payment.status()).isEqualTo(PaymentStatus.CREATED);
+	}
+
+	@Test
+	void finishedPaymentCannotMoveAgain() {
+		Payment payment = Payment.create(SOURCE, DESTINATION, eur("10"), REFERENCE);
+		payment.authorize();
+		payment.startProcessing();
+		payment.complete();
+
+		assertThatIllegalStateException().isThrownBy(payment::authorize);
+		assertThatIllegalStateException().isThrownBy(payment::fail);
+		assertThat(payment.status()).isEqualTo(PaymentStatus.COMPLETED);
 	}
 
 	private static Money eur(String amount) {

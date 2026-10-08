@@ -2,6 +2,7 @@ package com.example.payment.infrastructure.adapter.primary.web;
 
 import com.example.payment.application.exception.AccountNotFoundException;
 import com.example.payment.application.exception.AccountUnavailableException;
+import com.example.payment.application.exception.InvalidPaymentStateException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,12 @@ class PaymentExceptionHandler {
 	@ExceptionHandler(PaymentNotFoundException.class)
 	ProblemDetail notFound(PaymentNotFoundException e) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+	}
+
+	// The request is fine and the payment exists; it is just in the wrong state for this action.
+	@ExceptionHandler(InvalidPaymentStateException.class)
+	ProblemDetail conflict(InvalidPaymentStateException e) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
 	}
 
 	// The cause (a Feign exception) is not shown: the caller only needs to know to retry later.

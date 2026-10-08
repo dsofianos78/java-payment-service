@@ -10,7 +10,9 @@ import java.util.Objects;
 
 /**
  * The payment aggregate. It guards its own invariants, so an invalid
- * Payment cannot exist no matter which adapter created it.
+ * Payment cannot exist no matter which adapter created it, and it owns its
+ * lifecycle, so it cannot skip or repeat a step:
+ * CREATED -> AUTHORIZED -> PROCESSING -> COMPLETED | FAILED
  */
 public class Payment {
 
@@ -19,7 +21,7 @@ public class Payment {
 	private final AccountId destinationAccountId;
 	private final Money amount;
 	private final PaymentReference reference;
-	private final PaymentStatus status;
+	private PaymentStatus status;
 
 	private Payment(PaymentId id, AccountId sourceAccountId, AccountId destinationAccountId,
 			Money amount, PaymentReference reference, PaymentStatus status) {
@@ -51,6 +53,29 @@ public class Payment {
 	public static Payment restore(PaymentId id, AccountId sourceAccountId, AccountId destinationAccountId,
 			Money amount, PaymentReference reference, PaymentStatus status) {
 		return new Payment(id, sourceAccountId, destinationAccountId, amount, reference, status);
+	}
+
+	public void authorize() {
+		moveTo(PaymentStatus.AUTHORIZED, PaymentStatus.CREATED);
+	}
+
+	public void startProcessing() {
+		moveTo(PaymentStatus.PROCESSING, PaymentStatus.AUTHORIZED);
+	}
+
+	public void complete() {
+		moveTo(PaymentStatus.COMPLETED, PaymentStatus.PROCESSING);
+	}
+
+	public void fail() {
+		moveTo(PaymentStatus.FAILED, PaymentStatus.PROCESSING);
+	}
+
+	private void moveTo(PaymentStatus next, PaymentStatus requiredCurrent) {
+		if (status != requiredCurrent) {
+			throw new IllegalStateException("Payment " + id + " is " + status + " and cannot become " + next);
+		}
+		status = next;
 	}
 
 	public PaymentId id() {

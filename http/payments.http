@@ -158,3 +158,34 @@ Content-Type: application/json
   "currency": "EUR",
   "reference": "Invoice 12345"
 }
+
+### Episode 09 — create a payment to execute -> 201
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}
+
+### Episode 09 — execute it -> 200 "COMPLETED" (paste the paymentId from the response above)
+@executePaymentId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/payments/{{executePaymentId}}/execute
+
+### Episode 09 — execute it again -> 409 "is COMPLETED and cannot become AUTHORIZED"
+POST {{baseUrl}}/payments/{{executePaymentId}}/execute
+
+### Episode 09 — a payment the stub payment system rejects -> 201, then execute it -> 200 "FAILED"
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "REJECT insufficient funds"
+}

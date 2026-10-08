@@ -172,10 +172,65 @@ class PaymentControllerTest {
 	}
 
 	@Test
+	void executesAPaymentToCompletedAndStoresIt() throws Exception {
+		String paymentId = createPayment("Invoice 12345");
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("COMPLETED"));
+
+		mockMvc.perform(get("/payments/{id}", paymentId))
+				.andExpect(jsonPath("$.status").value("COMPLETED"));
+	}
+
+	@Test
+	void paymentTheStubRejectsEndsFailed() throws Exception {
+		String paymentId = createPayment("REJECT insufficient funds");
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("FAILED"));
+
+		assertThat(jdbc.sql("SELECT status FROM payment WHERE id = ?::uuid").param(paymentId).query(String.class).single())
+				.isEqualTo("FAILED");
+	}
+
+	@Test
+	void executingTwiceIs409() throws Exception {
+		String paymentId = createPayment("Invoice 12345");
+		mockMvc.perform(post("/payments/{id}/execute", paymentId)).andExpect(status().isOk());
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is COMPLETED and cannot become AUTHORIZED"));
+	}
+
+	@Test
+	void executingAnUnknownPaymentIs404() throws Exception {
+		mockMvc.perform(post("/payments/{id}/execute", UUID.randomUUID()))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
 	void rejectsMissingFieldsWith400() throws Exception {
 		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("{}"))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.status").value(400))
 				.andExpect(jsonPath("$.title").value("Bad Request"));
+	}
+
+	private String createPayment(String reference) throws Exception {
+		String response = mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("""
+						{
+						  "sourceAccountId": "ACC-10001",
+						  "destinationAccountId": "ACC-20001",
+						  "amount": 250.00,
+						  "currency": "EUR",
+						  "reference": "%s"
+						}
+						""".formatted(reference)))
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		return JsonPath.read(response, "$.paymentId");
 	}
 }

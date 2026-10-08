@@ -1,7 +1,9 @@
 package com.example.payment.infrastructure.adapter.primary.web;
 
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
+import com.example.payment.application.port.primary.ExecutePaymentUseCase;
 import com.example.payment.application.port.primary.GetPaymentUseCase;
+import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.application.usecase.query.GetPaymentQuery;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -20,10 +22,13 @@ public class PaymentController {
 	// Depends on the primary ports, never on the services that implement them.
 	private final CreatePaymentUseCase createPaymentUseCase;
 	private final GetPaymentUseCase getPaymentUseCase;
+	private final ExecutePaymentUseCase executePaymentUseCase;
 
-	public PaymentController(CreatePaymentUseCase createPaymentUseCase, GetPaymentUseCase getPaymentUseCase) {
+	public PaymentController(CreatePaymentUseCase createPaymentUseCase, GetPaymentUseCase getPaymentUseCase,
+			ExecutePaymentUseCase executePaymentUseCase) {
 		this.createPaymentUseCase = createPaymentUseCase;
 		this.getPaymentUseCase = getPaymentUseCase;
+		this.executePaymentUseCase = executePaymentUseCase;
 	}
 
 	@PostMapping
@@ -35,5 +40,11 @@ public class PaymentController {
 	@GetMapping("/{paymentId}")
 	public PaymentResponse get(@PathVariable String paymentId) {
 		return PaymentResponse.from(getPaymentUseCase.getPayment(new GetPaymentQuery(paymentId)));
+	}
+
+	// 200 even when the payment ends FAILED: the request was carried out, and the status says how it went.
+	@PostMapping("/{paymentId}/execute")
+	public PaymentResponse execute(@PathVariable String paymentId) {
+		return PaymentResponse.from(executePaymentUseCase.executePayment(new ExecutePaymentCommand(paymentId)));
 	}
 }
