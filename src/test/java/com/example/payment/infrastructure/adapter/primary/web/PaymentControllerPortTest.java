@@ -2,9 +2,12 @@ package com.example.payment.infrastructure.adapter.primary.web;
 
 import com.example.payment.application.exception.AccountNotFoundException;
 import com.example.payment.application.exception.AccountUnavailableException;
+import com.example.payment.application.exception.ExternalSystemUnavailableException;
 import com.example.payment.application.exception.IdempotencyKeyInProgressException;
 import com.example.payment.application.exception.IdempotencyKeyMismatchException;
 import com.example.payment.application.exception.InvalidPaymentStateException;
+import com.example.payment.application.exception.PaymentAuthorizationException;
+import com.example.payment.application.exception.PaymentLimitExceededException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.primary.CancelPaymentUseCase;
@@ -112,11 +115,11 @@ class PaymentControllerPortTest {
 		mockMvc(new PaymentController(
 				command -> { throw new AssertionError("not a create"); },
 				query -> { throw new AssertionError("not a query"); },
-				command -> { throw new InvalidPaymentStateException("Payment pay-1 is COMPLETED and cannot become AUTHORIZED",
+				command -> { throw new InvalidPaymentStateException("Payment pay-1 is COMPLETED and cannot become PROCESSING",
 						new IllegalStateException()); }, NO_CANCEL))
 				.perform(post("/payments/pay-1/execute"))
 				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.detail").value("Payment pay-1 is COMPLETED and cannot become AUTHORIZED"));
+				.andExpect(jsonPath("$.detail").value("Payment pay-1 is COMPLETED and cannot become PROCESSING"));
 	}
 
 	@Test
@@ -145,6 +148,9 @@ class PaymentControllerPortTest {
 		assertCreateFailsWith(new AccountUnavailableException(new RuntimeException("connection refused")), 503);
 		assertCreateFailsWith(new IdempotencyKeyInProgressException(), 409);
 		assertCreateFailsWith(new IdempotencyKeyMismatchException(), 422);
+		assertCreateFailsWith(new PaymentAuthorizationException(new PaymentId(UUID.randomUUID())), 422);
+		assertCreateFailsWith(new PaymentLimitExceededException(new PaymentId(UUID.randomUUID())), 422);
+		assertCreateFailsWith(new ExternalSystemUnavailableException("Limit system", new RuntimeException("timeout")), 503);
 
 		PaymentId unknown = new PaymentId(UUID.randomUUID());
 		mockMvc(new PaymentController(

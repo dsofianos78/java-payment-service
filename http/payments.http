@@ -122,7 +122,7 @@ Content-Type: application/json
   "reference": "Invoice 12345"
 }
 
-### Episode 06 — amount over the limit -> 400 "Payment amount must not exceed 10000.00 EUR"
+### Episode 06 — amount over the limit -> 400 "Payment amount must not exceed 10000.00 EUR" (since Episode 12: 201, the limit is checked on execute)
 POST {{baseUrl}}/payments
 Idempotency-Key: episode-06-request-2
 Content-Type: application/json
@@ -192,7 +192,7 @@ Content-Type: application/json
 @executePaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{executePaymentId}}/execute
 
-### Episode 09 — execute it again -> 409 "is COMPLETED and cannot become AUTHORIZED"
+### Episode 09 — execute it again -> 409 "is COMPLETED and cannot become PROCESSING"
 POST {{baseUrl}}/payments/{{executePaymentId}}/execute
 
 ### Episode 09 — a payment the stub payment system rejects -> 201, then execute it -> 200 "FAILED"
@@ -276,8 +276,42 @@ Content-Type: application/json
 @cancelPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{cancelPaymentId}}/cancel
 
-### Episode 11 — execute the cancelled payment -> 409 "is CANCELLED and cannot become AUTHORIZED"
+### Episode 11 — execute the cancelled payment -> 409 "is CANCELLED and cannot become PROCESSING"
 POST {{baseUrl}}/payments/{{cancelPaymentId}}/execute
 
 ### Episode 11 — cancel the COMPLETED payment from Episode 09 -> 409 "is COMPLETED and cannot become CANCELLED"
 POST {{baseUrl}}/payments/{{executePaymentId}}/cancel
+
+### Episode 12 — a payment to an account the authorization system declines -> 201
+POST {{baseUrl}}/payments
+Idempotency-Key: episode-12-demo-key-1
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-70001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 12012"
+}
+
+### Episode 12 — execute it -> 422 "was not authorized", payment stays CREATED (paste the paymentId above)
+@declinedPaymentId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/payments/{{declinedPaymentId}}/execute
+
+### Episode 12 — a payment over the source account's limit -> 201 (limits are checked on execute)
+POST {{baseUrl}}/payments
+Idempotency-Key: episode-12-demo-key-2
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 10000.01,
+  "currency": "EUR",
+  "reference": "Invoice 12013"
+}
+
+### Episode 12 — execute it -> 422 "exceeds the source account's limit", payment is now AUTHORIZED (paste the paymentId above)
+@overLimitPaymentId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/payments/{{overLimitPaymentId}}/execute

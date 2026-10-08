@@ -8,7 +8,6 @@ import com.example.payment.application.port.secondary.IdempotencyPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.validation.AccountStateValidator;
-import com.example.payment.application.validation.PaymentAmountLimitValidator;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.AccountStatus;
@@ -59,7 +58,7 @@ class CreatePaymentServiceTest {
 		}
 	};
 
-	private final CreatePaymentService service = new CreatePaymentService(new PaymentAmountLimitValidator(),
+	private final CreatePaymentService service = new CreatePaymentService(
 			new AccountStateValidator(accountId -> {
 				enquiries.add(accountId);
 				return Optional.ofNullable(accounts.get(accountId.value()));
@@ -110,20 +109,12 @@ class CreatePaymentServiceTest {
 		assertThat(saved).isEmpty();
 	}
 
-	@Test
-	void acceptsAmountExactlyAtTheLimit() {
-		Payment payment = service.createPayment(command("ACC-ACTIVE-1", "ACC-ACTIVE-2", "10000.00", "EUR"));
-
-		assertThat(saved).containsExactly(payment);
-	}
-
-	// Domain invariants and local policy both fail before the account system is asked anything,
-	// and both reach the caller as the same application exception.
+	// Domain invariants fail before the account system is asked anything,
+	// and reach the caller as an application exception.
 	@ParameterizedTest
 	@CsvSource({
 			"ACC-ACTIVE-1, ACC-ACTIVE-2, 250.00, JPY, Unsupported currency: JPY",
-			"ACC-ACTIVE-1, ACC-ACTIVE-1, 250.00, EUR, Source and destination accounts must differ",
-			"ACC-ACTIVE-1, ACC-ACTIVE-2, 10000.01, EUR, Payment amount must not exceed 10000.00 EUR"
+			"ACC-ACTIVE-1, ACC-ACTIVE-1, 250.00, EUR, Source and destination accounts must differ"
 	})
 	void doesNotEnquireAboutAccountsForAnInvalidRequest(String source, String destination, String amount,
 			String currency, String message) {
@@ -228,7 +219,7 @@ class CreatePaymentServiceTest {
 				return false;
 			}
 		};
-		return new CreatePaymentService(new PaymentAmountLimitValidator(),
+		return new CreatePaymentService(
 				new AccountStateValidator(accountId -> Optional.ofNullable(accounts.get(accountId.value()))),
 				new PaymentRepository() {
 					@Override

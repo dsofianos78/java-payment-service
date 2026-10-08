@@ -8,7 +8,6 @@ import com.example.payment.application.port.secondary.IdempotencyPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.validation.AccountStateValidator;
-import com.example.payment.application.validation.PaymentAmountLimitValidator;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
@@ -27,15 +26,12 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 
 	static final int MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 
-	private final PaymentAmountLimitValidator amountLimitValidator;
 	private final AccountStateValidator accountStateValidator;
 	private final PaymentRepository paymentRepository;
 	private final IdempotencyPort idempotencyPort;
 
-	public CreatePaymentService(PaymentAmountLimitValidator amountLimitValidator,
-			AccountStateValidator accountStateValidator, PaymentRepository paymentRepository,
+	public CreatePaymentService(AccountStateValidator accountStateValidator, PaymentRepository paymentRepository,
 			IdempotencyPort idempotencyPort) {
-		this.amountLimitValidator = amountLimitValidator;
 		this.accountStateValidator = accountStateValidator;
 		this.paymentRepository = paymentRepository;
 		this.idempotencyPort = idempotencyPort;
@@ -70,8 +66,8 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 			return replay(stored.get(), fingerprint);
 		}
 
-		// Application validation: cheap local policy first, so a rejected request never reaches the account system.
-		amountLimitValidator.validate(payment.amount());
+		// Application validation: both accounts exist and are active. Limits are not checked here: they depend on
+		// what the account has spent by the time the payment is executed (ExecutePaymentService).
 		accountStateValidator.validate(payment.sourceAccountId(), payment.destinationAccountId());
 
 		// Two requests with the same key can both get this far. The claim is atomic, so exactly one

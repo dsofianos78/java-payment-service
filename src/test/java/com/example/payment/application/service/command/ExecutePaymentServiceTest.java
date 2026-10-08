@@ -1,6 +1,8 @@
 package com.example.payment.application.service.command;
 
 import com.example.payment.application.exception.InvalidPaymentStateException;
+import com.example.payment.application.exception.PaymentAuthorizationException;
+import com.example.payment.application.exception.PaymentLimitExceededException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.secondary.PaymentExecutionPort.Outcome;
@@ -32,6 +34,9 @@ class ExecutePaymentServiceTest {
 	// The statuses the payment had each time it was saved, in order.
 	private final List<PaymentStatus> savedStatuses = new ArrayList<>();
 	private final List<PaymentStatus> statusWhenSent = new ArrayList<>();
+	private int authorizationRequests;
+	private boolean authorized = true;
+	private boolean withinLimit = true;
 
 	private final PaymentRepository repository = new PaymentRepository() {
 		@Override
@@ -52,7 +57,8 @@ class ExecutePaymentServiceTest {
 		assertThat(result.status()).isEqualTo(PaymentStatus.COMPLETED);
 		assertThat(statusWhenSent).containsExactly(PaymentStatus.PROCESSING);
 		// PROCESSING is stored before the payment system is called, so a crash can't leave it looking unsent.
-		assertThat(savedStatuses).containsExactly(PaymentStatus.PROCESSING, PaymentStatus.COMPLETED);
+		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED, PaymentStatus.PROCESSING,
+				PaymentStatus.COMPLETED);
 	}
 
 	@Test
@@ -60,7 +66,51 @@ class ExecutePaymentServiceTest {
 		Payment result = serviceAnswering(Outcome.REJECTED).executePayment(command(stored.id()));
 
 		assertThat(result.status()).isEqualTo(PaymentStatus.FAILED);
-		assertThat(savedStatuses).containsExactly(PaymentStatus.PROCESSING, PaymentStatus.FAILED);
+		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED, PaymentStatus.PROCESSING,
+				PaymentStatus.FAILED);
+	}
+
+	@Test
+	void aDeclinedPaymentIsNeitherStoredNorSent() {
+		authorized = false;
+
+		assertThatExceptionOfType(PaymentAuthorizationException.class)
+				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(command(stored.id())))
+				.withMessage("Payment " + stored.id() + " was not authorized");
+		assertThat(stored.status()).isEqualTo(PaymentStatus.CREATED);
+		assertThat(savedStatuses).isEmpty();
+		assertThat(statusWhenSent).isEmpty();
+	}
+
+	@Test
+	void aPaymentOverItsLimitStaysAuthorizedAndIsNotSent() {
+		withinLimit = false;
+
+		assertThatExceptionOfType(PaymentLimitExceededException.class)
+				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(command(stored.id())))
+				.withMessage("Payment " + stored.id() + " exceeds the source account's limit");
+		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED);
+		assertThat(statusWhenSent).isEmpty();
+	}
+
+	@Test
+	void retryAfterTheLimitAllowsItIsNotAuthorizedAgain() {
+		Payment authorizedEarlier = Payment.restore(stored.id(), stored.sourceAccountId(),
+				stored.destinationAccountId(), stored.amount(), stored.reference(), PaymentStatus.AUTHORIZED);
+		ExecutePaymentService service = new ExecutePaymentService(new PaymentRepository() {
+			@Override
+			public void save(Payment payment) {
+				savedStatuses.add(payment.status());
+			}
+
+			@Override
+			public Optional<Payment> findById(PaymentId paymentId) {
+				return Optional.of(authorizedEarlier);
+			}
+		}, this::authorize, payment -> true, payment -> Outcome.EXECUTED);
+
+		assertThat(service.executePayment(command(stored.id())).status()).isEqualTo(PaymentStatus.COMPLETED);
+		assertThat(authorizationRequests).isZero();
 	}
 
 	@Test
@@ -70,8 +120,10 @@ class ExecutePaymentServiceTest {
 
 		assertThatExceptionOfType(InvalidPaymentStateException.class)
 				.isThrownBy(() -> service.executePayment(command(stored.id())))
-				.withMessage("Payment " + stored.id() + " is COMPLETED and cannot become AUTHORIZED");
+				.withMessage("Payment " + stored.id() + " is COMPLETED and cannot become PROCESSING");
 		assertThat(statusWhenSent).hasSize(1);
+		// A finished payment is refused before any external system is asked again.
+		assertThat(authorizationRequests).isEqualTo(1);
 	}
 
 	@Test
@@ -91,10 +143,15 @@ class ExecutePaymentServiceTest {
 	}
 
 	private ExecutePaymentService serviceAnswering(Outcome outcome) {
-		return new ExecutePaymentService(repository, payment -> {
+		return new ExecutePaymentService(repository, this::authorize, payment -> withinLimit, payment -> {
 			statusWhenSent.add(payment.status());
 			return outcome;
 		});
+	}
+
+	private boolean authorize(Payment payment) {
+		authorizationRequests++;
+		return authorized;
 	}
 
 	private static ExecutePaymentCommand command(PaymentId id) {

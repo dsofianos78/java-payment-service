@@ -16,6 +16,11 @@
         "jsonBody": { "accountNumber": "ACC-30001", "accountName": "Fictional Current Account", "currency": "GBP", "state": "OPEN" } }
     },
     {
+      "request": { "method": "GET", "url": "/accounts/ACC-70001" },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "accountNumber": "ACC-70001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "OPEN" } }
+    },
+    {
       "request": { "method": "GET", "url": "/accounts/ACC-80001" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
         "jsonBody": { "accountNumber": "ACC-80001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "FROZEN" } }

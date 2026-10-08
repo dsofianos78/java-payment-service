@@ -1,6 +1,6 @@
 # Episode 11 — Cancel Payment
 
-Git tag: `episode-11-cancellation` · Previous: [Episode 10 — Idempotency](10-idempotency.md) · Next: Episode 12 — Authorization and Limits
+Git tag: `episode-11-cancellation` · Previous: [Episode 10 — Idempotency](10-idempotency.md) · Next: [Episode 12 — Authorization and Limits](12-authorization-limits.md)
 
 ## Goal
 

@@ -13,8 +13,8 @@ services:
     volumes:
       - payments-data:/var/lib/postgresql
 
-  # A stand-in for the external account system, serving the fictional accounts in
-  # wiremock/mappings. Unknown accounts get WireMock's default 404.
+  # A stand-in for the external account, authorization and limit systems, serving the
+  # fictional data in wiremock/mappings. Unknown accounts get WireMock's default 404.
   account-system:
     image: wiremock/wiremock:3.13.2
     ports:

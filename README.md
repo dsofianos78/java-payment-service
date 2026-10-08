@@ -39,6 +39,7 @@ git checkout episode-01-working-payment
 | 09 | [Execute Payment](docs/episodes/09-payment-execution.md) | `episode-09-payment-execution` |
 | 10 | [Idempotency](docs/episodes/10-idempotency.md) | `episode-10-idempotency` |
 | 11 | [Cancel Payment](docs/episodes/11-cancel-payment.md) | `episode-11-cancellation` |
+| 12 | [Authorization and Limits](docs/episodes/12-authorization-limits.md) | `episode-12-authorization-limits` |
 
 ## License
 

@@ -40,15 +40,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 class PaymentControllerTest {
 
-	// The same fictional accounts compose.yaml serves locally.
+	// The same fictional account, authorization and limit systems compose.yaml serves locally.
 	@RegisterExtension
-	static WireMockExtension accountSystem = WireMockExtension.newInstance()
+	static WireMockExtension externalSystems = WireMockExtension.newInstance()
 			.options(wireMockConfig().dynamicPort().usingFilesUnderDirectory("wiremock"))
 			.build();
 
 	@DynamicPropertySource
-	static void accountSystemUrl(DynamicPropertyRegistry registry) {
-		registry.add("account-system.url", accountSystem::baseUrl);
+	static void externalSystemUrls(DynamicPropertyRegistry registry) {
+		registry.add("account-system.url", externalSystems::baseUrl);
+		registry.add("authorization-system.url", externalSystems::baseUrl);
+		registry.add("limit-system.url", externalSystems::baseUrl);
 	}
 
 	@Autowired
@@ -168,21 +170,6 @@ class PaymentControllerTest {
 	}
 
 	@Test
-	void rejectsAmountOverTheLimitWith400() throws Exception {
-		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON).content("""
-						{
-						  "sourceAccountId": "ACC-10001",
-						  "destinationAccountId": "ACC-20001",
-						  "amount": 10000.01,
-						  "currency": "EUR",
-						  "reference": "Invoice 12345"
-						}
-						"""))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.detail").value("Payment amount must not exceed 10000.00 EUR"));
-	}
-
-	@Test
 	void executesAPaymentToCompletedAndStoresIt() throws Exception {
 		String paymentId = createPayment("Invoice 12345");
 
@@ -213,7 +200,39 @@ class PaymentControllerTest {
 
 		mockMvc.perform(post("/payments/{id}/execute", paymentId))
 				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is COMPLETED and cannot become AUTHORIZED"));
+				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is COMPLETED and cannot become PROCESSING"));
+	}
+
+	@Test
+	void paymentTheAuthorizationSystemDeclinesIs422AndStaysCreated() throws Exception {
+		String paymentId = createPayment("ACC-70001", "250.00", "Declined by authorization");
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isUnprocessableContent())
+				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " was not authorized"));
+		mockMvc.perform(get("/payments/{id}", paymentId))
+				.andExpect(jsonPath("$.status").value("CREATED"));
+	}
+
+	// Creating it is fine: limits depend on what the account has spent by the time the money moves.
+	@Test
+	void paymentOverTheLimitIs422AndStaysAuthorized() throws Exception {
+		String paymentId = createPayment("ACC-20001", "10000.01", "Over the limit");
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isUnprocessableContent())
+				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " exceeds the source account's limit"));
+		mockMvc.perform(get("/payments/{id}", paymentId))
+				.andExpect(jsonPath("$.status").value("AUTHORIZED"));
+	}
+
+	@Test
+	void paymentAtTheLimitCompletes() throws Exception {
+		String paymentId = createPayment("ACC-20001", "10000.00", "At the limit");
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("COMPLETED"));
 	}
 
 	@Test
@@ -253,7 +272,7 @@ class PaymentControllerTest {
 
 		mockMvc.perform(post("/payments/{id}/execute", paymentId))
 				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is CANCELLED and cannot become AUTHORIZED"));
+				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is CANCELLED and cannot become PROCESSING"));
 	}
 
 	@Test
@@ -352,15 +371,19 @@ class PaymentControllerTest {
 	}
 
 	private String createPayment(String reference) throws Exception {
+		return createPayment("ACC-20001", "250.00", reference);
+	}
+
+	private String createPayment(String destinationAccountId, String amount, String reference) throws Exception {
 		String response = mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON).content("""
 						{
 						  "sourceAccountId": "ACC-10001",
-						  "destinationAccountId": "ACC-20001",
-						  "amount": 250.00,
+						  "destinationAccountId": "%s",
+						  "amount": %s,
 						  "currency": "EUR",
 						  "reference": "%s"
 						}
-						""".formatted(reference)))
+						""".formatted(destinationAccountId, amount, reference)))
 				.andExpect(status().isCreated())
 				.andReturn().getResponse().getContentAsString();
 		return JsonPath.read(response, "$.paymentId");

@@ -1,0 +1,17 @@
+{
+  "mappings": [
+    {
+      "priority": 1,
+      "request": { "method": "POST", "url": "/limit-checks",
+        "bodyPatterns": [ { "matchesJsonPath": "$[?(@.amount > 10000)]" } ] },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "result": "LIMIT_EXCEEDED" } }
+    },
+    {
+      "priority": 10,
+      "request": { "method": "POST", "url": "/limit-checks" },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "result": "WITHIN_LIMIT" } }
+    }
+  ]
+}

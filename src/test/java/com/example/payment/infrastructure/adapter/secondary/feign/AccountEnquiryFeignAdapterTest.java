@@ -43,6 +43,9 @@ class AccountEnquiryFeignAdapterTest {
 	@DynamicPropertySource
 	static void accountSystemUrl(DynamicPropertyRegistry registry) {
 		registry.add("account-system.url", accountSystem::baseUrl);
+		// FeignConfiguration builds every client in the package, so each needs a URL.
+		registry.add("authorization-system.url", accountSystem::baseUrl);
+		registry.add("limit-system.url", accountSystem::baseUrl);
 	}
 
 	@Autowired

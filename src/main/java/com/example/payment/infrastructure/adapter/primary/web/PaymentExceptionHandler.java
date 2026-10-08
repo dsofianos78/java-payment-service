@@ -2,9 +2,12 @@ package com.example.payment.infrastructure.adapter.primary.web;
 
 import com.example.payment.application.exception.AccountNotFoundException;
 import com.example.payment.application.exception.AccountUnavailableException;
+import com.example.payment.application.exception.ExternalSystemUnavailableException;
 import com.example.payment.application.exception.IdempotencyKeyInProgressException;
 import com.example.payment.application.exception.IdempotencyKeyMismatchException;
 import com.example.payment.application.exception.InvalidPaymentStateException;
+import com.example.payment.application.exception.PaymentAuthorizationException;
+import com.example.payment.application.exception.PaymentLimitExceededException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
 import org.springframework.http.HttpStatus;
@@ -38,14 +41,17 @@ class PaymentExceptionHandler {
 	}
 
 	// Well-formed, but the key belongs to another request; retrying the same thing can never succeed.
-	@ExceptionHandler(IdempotencyKeyMismatchException.class)
-	ProblemDetail unprocessable(IdempotencyKeyMismatchException e) {
+	// Same for a payment the authorization or limit system refused: valid, just not allowed.
+	// (Not 403: that would say the caller lacks permission, not that the payment was declined.)
+	@ExceptionHandler({IdempotencyKeyMismatchException.class, PaymentAuthorizationException.class,
+			PaymentLimitExceededException.class})
+	ProblemDetail unprocessable(RuntimeException e) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, e.getMessage());
 	}
 
 	// The cause (a Feign exception) is not shown: the caller only needs to know to retry later.
-	@ExceptionHandler(AccountUnavailableException.class)
-	ProblemDetail serviceUnavailable(AccountUnavailableException e) {
+	@ExceptionHandler({AccountUnavailableException.class, ExternalSystemUnavailableException.class})
+	ProblemDetail serviceUnavailable(RuntimeException e) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
 	}
 }
