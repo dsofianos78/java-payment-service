@@ -121,3 +121,18 @@ Content-Type: application/json
   "currency": "EUR",
   "reference": "Invoice 12345"
 }
+
+### Episode 07 — frozen account in the external account system -> 400 "is not active"
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-80001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 12345"
+}
+
+### Episode 07 — ask the fake account system directly (WireMock from compose.yaml)
+GET http://localhost:8089/accounts/ACC-80001

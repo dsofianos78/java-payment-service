@@ -1,6 +1,6 @@
 # Episode 06 — Payment Validation
 
-Git tag: `episode-06-validation` · Previous: [Episode 05 — Query a Payment](05-query-payment.md) · Next: Episode 07 — External Account System
+Git tag: `episode-06-validation` · Previous: [Episode 05 — Query a Payment](05-query-payment.md) · Next: [Episode 07 — External Account System](07-account-system.md)
 
 ## Goal
 

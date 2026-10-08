@@ -1,6 +1,6 @@
-# Local PostgreSQL for ./mvnw spring-boot:run. Spring Boot starts it automatically
+# Local infrastructure for ./mvnw spring-boot:run. Spring Boot starts it automatically
 # and stops it on shutdown; the named volume keeps the data between restarts.
-# Example credentials for a local container only.
+# Example credentials for local containers only.
 services:
   postgres:
     image: postgres:18-alpine
@@ -12,6 +12,15 @@ services:
       - "5432"
     volumes:
       - payments-data:/var/lib/postgresql
+
+  # A stand-in for the external account system, serving the fictional accounts in
+  # wiremock/mappings. Unknown accounts get WireMock's default 404.
+  account-system:
+    image: wiremock/wiremock:3.13.2
+    ports:
+      - "8089:8080"
+    volumes:
+      - ./wiremock:/home/wiremock:ro
 
 volumes:
   payments-data:

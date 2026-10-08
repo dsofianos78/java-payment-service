@@ -1,18 +1,23 @@
 package com.example.payment.infrastructure.adapter.primary.web;
 
 import com.example.payment.TestcontainersConfiguration;
+import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
 
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,6 +28,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class PaymentControllerTest {
+
+	// The same fictional accounts compose.yaml serves locally.
+	@RegisterExtension
+	static WireMockExtension accountSystem = WireMockExtension.newInstance()
+			.options(wireMockConfig().dynamicPort().usingFilesUnderDirectory("wiremock"))
+			.build();
+
+	@DynamicPropertySource
+	static void accountSystemUrl(DynamicPropertyRegistry registry) {
+		registry.add("account-system.url", accountSystem::baseUrl);
+	}
 
 	@Autowired
 	MockMvc mockMvc;
@@ -120,6 +136,21 @@ class PaymentControllerTest {
 						"""))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.detail").value("Destination account ACC-90001 is not active"));
+	}
+
+	@Test
+	void rejectsAccountTheAccountSystemDoesNotKnowWith400() throws Exception {
+		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content("""
+						{
+						  "sourceAccountId": "ACC-99999",
+						  "destinationAccountId": "ACC-20001",
+						  "amount": 250.00,
+						  "currency": "EUR",
+						  "reference": "Invoice 12345"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.detail").value("Source account ACC-99999 does not exist"));
 	}
 
 	@Test
