@@ -1,8 +1,10 @@
 package com.example.payment.infrastructure.adapter.primary.web;
 
+import com.example.payment.application.port.primary.CancelPaymentUseCase;
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
 import com.example.payment.application.port.primary.ExecutePaymentUseCase;
 import com.example.payment.application.port.primary.GetPaymentUseCase;
+import com.example.payment.application.usecase.command.CancelPaymentCommand;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.application.usecase.query.GetPaymentQuery;
 import jakarta.validation.Valid;
@@ -24,12 +26,14 @@ public class PaymentController {
 	private final CreatePaymentUseCase createPaymentUseCase;
 	private final GetPaymentUseCase getPaymentUseCase;
 	private final ExecutePaymentUseCase executePaymentUseCase;
+	private final CancelPaymentUseCase cancelPaymentUseCase;
 
 	public PaymentController(CreatePaymentUseCase createPaymentUseCase, GetPaymentUseCase getPaymentUseCase,
-			ExecutePaymentUseCase executePaymentUseCase) {
+			ExecutePaymentUseCase executePaymentUseCase, CancelPaymentUseCase cancelPaymentUseCase) {
 		this.createPaymentUseCase = createPaymentUseCase;
 		this.getPaymentUseCase = getPaymentUseCase;
 		this.executePaymentUseCase = executePaymentUseCase;
+		this.cancelPaymentUseCase = cancelPaymentUseCase;
 	}
 
 	// A retry with the same Idempotency-Key gets the same payment back, still 201.
@@ -50,5 +54,11 @@ public class PaymentController {
 	@PostMapping("/{paymentId}/execute")
 	public PaymentResponse execute(@PathVariable String paymentId) {
 		return PaymentResponse.from(executePaymentUseCase.executePayment(new ExecutePaymentCommand(paymentId)));
+	}
+
+	// No status check here: whether a payment can still be cancelled is the domain's decision (409 if not).
+	@PostMapping("/{paymentId}/cancel")
+	public PaymentResponse cancel(@PathVariable String paymentId) {
+		return PaymentResponse.from(cancelPaymentUseCase.cancelPayment(new CancelPaymentCommand(paymentId)));
 	}
 }

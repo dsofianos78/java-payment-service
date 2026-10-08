@@ -7,6 +7,7 @@ import com.example.payment.application.exception.IdempotencyKeyMismatchException
 import com.example.payment.application.exception.InvalidPaymentStateException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.port.primary.CancelPaymentUseCase;
 import com.example.payment.application.port.primary.ExecutePaymentUseCase;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.usecase.query.GetPaymentResult;
@@ -48,6 +49,7 @@ class PaymentControllerPortTest {
 			""";
 
 	private static final ExecutePaymentUseCase NO_EXECUTE = command -> { throw new AssertionError("not an execute"); };
+	private static final CancelPaymentUseCase NO_CANCEL = command -> { throw new AssertionError("not a cancel"); };
 
 	@Test
 	void translatesRequestIntoCommandAndPaymentIntoResponse() throws Exception {
@@ -56,7 +58,7 @@ class PaymentControllerPortTest {
 			received.set(command);
 			return Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
 					new Money(new BigDecimal("9.99"), Currency.GBP), new PaymentReference("From stub"));
-		}, query -> { throw new AssertionError("not a query"); }, NO_EXECUTE));
+		}, query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL));
 
 		mockMvc.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
 				.andExpect(status().isCreated())
@@ -77,7 +79,7 @@ class PaymentControllerPortTest {
 				query -> {
 					assertThat(query.paymentId()).isEqualTo("pay-1");
 					return stored;
-				}, NO_EXECUTE));
+				}, NO_EXECUTE, NO_CANCEL));
 
 		mockMvc.perform(get("/payments/pay-1"))
 				.andExpect(status().isOk())
@@ -98,7 +100,7 @@ class PaymentControllerPortTest {
 				command -> {
 					assertThat(command.paymentId()).isEqualTo("pay-1");
 					return executed;
-				}));
+				}, NO_CANCEL));
 
 		mockMvc.perform(post("/payments/pay-1/execute"))
 				.andExpect(status().isOk())
@@ -111,10 +113,28 @@ class PaymentControllerPortTest {
 				command -> { throw new AssertionError("not a create"); },
 				query -> { throw new AssertionError("not a query"); },
 				command -> { throw new InvalidPaymentStateException("Payment pay-1 is COMPLETED and cannot become AUTHORIZED",
-						new IllegalStateException()); }))
+						new IllegalStateException()); }, NO_CANCEL))
 				.perform(post("/payments/pay-1/execute"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.detail").value("Payment pay-1 is COMPLETED and cannot become AUTHORIZED"));
+	}
+
+	@Test
+	void passesThePathIdAsACancelCommandAndMapsThePayment() throws Exception {
+		Payment cancelled = Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
+				new Money(new BigDecimal("9.99"), Currency.GBP), new PaymentReference("From stub"));
+		cancelled.cancel();
+		MockMvc mockMvc = mockMvc(new PaymentController(
+				command -> { throw new AssertionError("not a create"); },
+				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE,
+				command -> {
+					assertThat(command.paymentId()).isEqualTo("pay-1");
+					return cancelled;
+				}));
+
+		mockMvc.perform(post("/payments/pay-1/cancel"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("CANCELLED"));
 	}
 
 	// Every application exception has exactly one HTTP status, and its message becomes the detail.
@@ -129,7 +149,7 @@ class PaymentControllerPortTest {
 		PaymentId unknown = new PaymentId(UUID.randomUUID());
 		mockMvc(new PaymentController(
 				command -> { throw new AssertionError("not a create"); },
-				query -> { throw new PaymentNotFoundException(unknown); }, NO_EXECUTE))
+				query -> { throw new PaymentNotFoundException(unknown); }, NO_EXECUTE, NO_CANCEL))
 				.perform(get("/payments/{id}", unknown))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.detail").value("Payment " + unknown + " does not exist"));
@@ -139,7 +159,7 @@ class PaymentControllerPortTest {
 	void doesNotLeakTheCauseOfAnUnavailableAccountSystem() throws Exception {
 		mockMvc(new PaymentController(
 				command -> { throw new AccountUnavailableException(new RuntimeException("10.0.0.7:8089 refused")); },
-				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE))
+				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL))
 				.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
 				.andExpect(status().isServiceUnavailable())
 				.andExpect(jsonPath("$.detail").value("Account system is unavailable"));
@@ -148,7 +168,7 @@ class PaymentControllerPortTest {
 	private static void assertCreateFailsWith(RuntimeException thrown, int httpStatus) throws Exception {
 		mockMvc(new PaymentController(
 				command -> { throw thrown; },
-				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE))
+				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL))
 				.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST))
 				.andExpect(status().is(httpStatus))
 				.andExpect(jsonPath("$.status").value(httpStatus))

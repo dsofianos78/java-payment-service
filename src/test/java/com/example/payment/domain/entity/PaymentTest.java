@@ -100,6 +100,41 @@ class PaymentTest {
 		assertThat(payment.status()).isEqualTo(PaymentStatus.COMPLETED);
 	}
 
+	@Test
+	void cancelsBeforeProcessingStarts() {
+		Payment created = Payment.create(SOURCE, DESTINATION, eur("10"), REFERENCE);
+		created.cancel();
+		assertThat(created.status()).isEqualTo(PaymentStatus.CANCELLED);
+
+		Payment authorized = Payment.create(SOURCE, DESTINATION, eur("10"), REFERENCE);
+		authorized.authorize();
+		authorized.cancel();
+		assertThat(authorized.status()).isEqualTo(PaymentStatus.CANCELLED);
+	}
+
+	@Test
+	void cannotCancelOnceProcessingHasStarted() {
+		Payment payment = Payment.create(SOURCE, DESTINATION, eur("10"), REFERENCE);
+		payment.authorize();
+		payment.startProcessing();
+		assertThatIllegalStateException().isThrownBy(payment::cancel);
+
+		payment.complete();
+		assertThatIllegalStateException().isThrownBy(payment::cancel)
+				.withMessage("Payment " + payment.id() + " is COMPLETED and cannot become CANCELLED");
+		assertThat(payment.status()).isEqualTo(PaymentStatus.COMPLETED);
+	}
+
+	@Test
+	void cancelledPaymentCannotMoveAgain() {
+		Payment payment = Payment.create(SOURCE, DESTINATION, eur("10"), REFERENCE);
+		payment.cancel();
+
+		assertThatIllegalStateException().isThrownBy(payment::cancel);
+		assertThatIllegalStateException().isThrownBy(payment::authorize);
+		assertThat(payment.status()).isEqualTo(PaymentStatus.CANCELLED);
+	}
+
 	private static Money eur(String amount) {
 		return new Money(new BigDecimal(amount), Currency.EUR);
 	}

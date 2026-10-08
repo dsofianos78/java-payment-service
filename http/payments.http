@@ -258,3 +258,26 @@ Content-Type: application/json
   "currency": "EUR",
   "reference": "Invoice 10011"
 }
+
+### Episode 11 — create a payment to cancel -> 201
+POST {{baseUrl}}/payments
+Idempotency-Key: episode-11-demo-key-1
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 11011"
+}
+
+### Episode 11 — cancel it -> 200 "CANCELLED" (paste the paymentId from the response above)
+@cancelPaymentId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/payments/{{cancelPaymentId}}/cancel
+
+### Episode 11 — execute the cancelled payment -> 409 "is CANCELLED and cannot become AUTHORIZED"
+POST {{baseUrl}}/payments/{{cancelPaymentId}}/execute
+
+### Episode 11 — cancel the COMPLETED payment from Episode 09 -> 409 "is COMPLETED and cannot become CANCELLED"
+POST {{baseUrl}}/payments/{{executePaymentId}}/cancel

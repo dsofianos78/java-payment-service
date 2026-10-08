@@ -1,6 +1,6 @@
 # Episode 10 — Idempotency
 
-Git tag: `episode-10-idempotency` · Previous: [Episode 09 — Execute Payment](09-payment-execution.md) · Next: Episode 11 — Cancel Payment
+Git tag: `episode-10-idempotency` · Previous: [Episode 09 — Execute Payment](09-payment-execution.md) · Next: [Episode 11 — Cancel Payment](11-cancel-payment.md)
 
 ## Goal
 

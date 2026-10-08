@@ -6,6 +6,7 @@ import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
 import com.example.payment.domain.valueobject.PaymentStatus;
 
+import java.util.EnumSet;
 import java.util.Objects;
 
 /**
@@ -13,6 +14,7 @@ import java.util.Objects;
  * Payment cannot exist no matter which adapter created it, and it owns its
  * lifecycle, so it cannot skip or repeat a step:
  * CREATED -> AUTHORIZED -> PROCESSING -> COMPLETED | FAILED
+ * CREATED | AUTHORIZED -> CANCELLED
  */
 public class Payment {
 
@@ -71,8 +73,13 @@ public class Payment {
 		moveTo(PaymentStatus.FAILED, PaymentStatus.PROCESSING);
 	}
 
-	private void moveTo(PaymentStatus next, PaymentStatus requiredCurrent) {
-		if (status != requiredCurrent) {
+	/** Only before processing starts: from then on money may already be moving. */
+	public void cancel() {
+		moveTo(PaymentStatus.CANCELLED, PaymentStatus.CREATED, PaymentStatus.AUTHORIZED);
+	}
+
+	private void moveTo(PaymentStatus next, PaymentStatus requiredCurrent, PaymentStatus... alsoAllowed) {
+		if (!EnumSet.of(requiredCurrent, alsoAllowed).contains(status)) {
 			throw new IllegalStateException("Payment " + id + " is " + status + " and cannot become " + next);
 		}
 		status = next;

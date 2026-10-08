@@ -223,6 +223,46 @@ class PaymentControllerTest {
 	}
 
 	@Test
+	void cancelsACreatedPaymentAndStoresIt() throws Exception {
+		String paymentId = createPayment("Invoice 12345");
+
+		mockMvc.perform(post("/payments/{id}/cancel", paymentId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("CANCELLED"));
+
+		mockMvc.perform(get("/payments/{id}", paymentId))
+				.andExpect(jsonPath("$.status").value("CANCELLED"));
+	}
+
+	@Test
+	void cancellingACompletedPaymentIs409() throws Exception {
+		String paymentId = createPayment("Invoice 12345");
+		mockMvc.perform(post("/payments/{id}/execute", paymentId)).andExpect(status().isOk());
+
+		mockMvc.perform(post("/payments/{id}/cancel", paymentId))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is COMPLETED and cannot become CANCELLED"));
+		mockMvc.perform(get("/payments/{id}", paymentId))
+				.andExpect(jsonPath("$.status").value("COMPLETED"));
+	}
+
+	@Test
+	void cancelledPaymentCannotBeExecuted() throws Exception {
+		String paymentId = createPayment("Invoice 12345");
+		mockMvc.perform(post("/payments/{id}/cancel", paymentId)).andExpect(status().isOk());
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is CANCELLED and cannot become AUTHORIZED"));
+	}
+
+	@Test
+	void cancellingAnUnknownPaymentIs404() throws Exception {
+		mockMvc.perform(post("/payments/{id}/cancel", UUID.randomUUID()))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
 	void retryWithTheSameIdempotencyKeyReturnsTheSamePayment() throws Exception {
 		String key = UUID.randomUUID().toString();
 		String body = paymentWithReference("Idempotent retry");
