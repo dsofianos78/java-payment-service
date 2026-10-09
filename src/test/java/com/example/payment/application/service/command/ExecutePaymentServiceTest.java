@@ -12,6 +12,8 @@ import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.event.PaymentEvent;
+import com.example.payment.domain.event.PaymentEventType;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
@@ -46,6 +48,7 @@ class ExecutePaymentServiceTest {
 	private boolean withinLimit = true;
 	private final List<String> audited = new ArrayList<>();
 	private final AuditPort audit = (paymentId, from, to) -> audited.add(from + "->" + to);
+	private final List<PaymentEvent> events = new ArrayList<>();
 	// What the stored status would be if another request had changed it after we read the payment.
 	private PaymentStatus changedByAnotherRequest;
 
@@ -85,6 +88,12 @@ class ExecutePaymentServiceTest {
 		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED, PaymentStatus.PROCESSING,
 				PaymentStatus.COMPLETED);
 		assertThat(audited).containsExactly("CREATED->AUTHORIZED", "AUTHORIZED->PROCESSING", "PROCESSING->COMPLETED");
+		// One event, for the final status only.
+		assertThat(events).singleElement().satisfies(event -> {
+			assertThat(event.type()).isEqualTo(PaymentEventType.PAYMENT_COMPLETED);
+			assertThat(event.paymentId()).isEqualTo(stored.id());
+			assertThat(event.amount()).isEqualTo(stored.amount());
+		});
 	}
 
 	@Test
@@ -97,6 +106,7 @@ class ExecutePaymentServiceTest {
 				.withMessage("Payment " + stored.id() + " was changed by another request and cannot become PROCESSING");
 		assertThat(statusWhenSent).isEmpty();
 		assertThat(audited).containsExactly("CREATED->AUTHORIZED");
+		assertThat(events).isEmpty();
 	}
 
 	@Test
@@ -107,6 +117,7 @@ class ExecutePaymentServiceTest {
 		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED, PaymentStatus.PROCESSING,
 				PaymentStatus.FAILED);
 		assertThat(audited).endsWith("PROCESSING->FAILED");
+		assertThat(events).extracting(PaymentEvent::type).containsExactly(PaymentEventType.PAYMENT_FAILED);
 	}
 
 	@Test
@@ -117,6 +128,7 @@ class ExecutePaymentServiceTest {
 		assertThat(result.status()).isEqualTo(PaymentStatus.PROCESSING);
 		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED, PaymentStatus.PROCESSING);
 		assertThat(audited).containsExactly("CREATED->AUTHORIZED", "AUTHORIZED->PROCESSING");
+		assertThat(events).isEmpty(); // nothing final has happened yet
 	}
 
 	@Test
@@ -167,7 +179,7 @@ class ExecutePaymentServiceTest {
 			public List<Payment> findProcessingSince(Instant before) {
 				throw new AssertionError("only reconciliation looks for stuck payments");
 			}
-		}, this::authorize, payment -> true, executing(payment -> Outcome.EXECUTED), audit, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
+		}, this::authorize, payment -> true, executing(payment -> Outcome.EXECUTED), audit, events::add, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 
 		assertThat(service.executePayment(command(stored.id())).status()).isEqualTo(PaymentStatus.COMPLETED);
 		assertThat(authorizationRequests).isZero();
@@ -206,7 +218,7 @@ class ExecutePaymentServiceTest {
 		return new ExecutePaymentService(repository, this::authorize, payment -> withinLimit, executing(payment -> {
 			statusWhenSent.add(payment.status());
 			return outcome;
-		}), audit, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
+		}), audit, events::add, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 	}
 
 	// Execute only sends; asking about a stuck payment is reconciliation's job.

@@ -12,5 +12,10 @@ public enum PaymentStatus {
 	PROCESSING,
 	COMPLETED,
 	FAILED,
-	CANCELLED
+	CANCELLED;
+
+	/** A status the payment never leaves. Reaching one is news for other services (domain/event). */
+	public boolean isFinal() {
+		return this == COMPLETED || this == FAILED || this == CANCELLED;
+	}
 }

@@ -2,11 +2,13 @@ package com.example.payment.application.service.command;
 
 import com.example.payment.application.port.primary.ReconcilePaymentsUseCase;
 import com.example.payment.application.port.secondary.AuditPort;
+import com.example.payment.application.port.secondary.PaymentEventPort;
 import com.example.payment.application.port.secondary.PaymentExecutionPort;
 import com.example.payment.application.port.secondary.PaymentExecutionPort.Outcome;
 import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.event.PaymentEvent;
 import com.example.payment.domain.valueobject.PaymentStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +24,7 @@ import java.time.Instant;
  * the domain decides whether the payment may move.
  *
  * Like ExecutePaymentService, no transaction is held across the external call:
- * each payment gets its own short one, with its audit record, once the answer is in.
+ * each payment gets its own short one, with its audit record and event, once the answer is in.
  */
 @Service
 public class ReconcilePaymentsService implements ReconcilePaymentsUseCase {
@@ -32,14 +34,17 @@ public class ReconcilePaymentsService implements ReconcilePaymentsUseCase {
 	private final PaymentRepository paymentRepository;
 	private final PaymentExecutionPort paymentExecutionPort;
 	private final AuditPort auditPort;
+	private final PaymentEventPort paymentEventPort;
 	private final PaymentMetricsPort paymentMetricsPort;
 	private final TransactionOperations transactions;
 
 	public ReconcilePaymentsService(PaymentRepository paymentRepository, PaymentExecutionPort paymentExecutionPort,
-			AuditPort auditPort, PaymentMetricsPort paymentMetricsPort, TransactionOperations transactions) {
+			AuditPort auditPort, PaymentEventPort paymentEventPort, PaymentMetricsPort paymentMetricsPort,
+			TransactionOperations transactions) {
 		this.paymentRepository = paymentRepository;
 		this.paymentExecutionPort = paymentExecutionPort;
 		this.auditPort = auditPort;
+		this.paymentEventPort = paymentEventPort;
 		this.paymentMetricsPort = paymentMetricsPort;
 		this.transactions = transactions;
 	}
@@ -76,6 +81,7 @@ public class ReconcilePaymentsService implements ReconcilePaymentsUseCase {
 				return false;
 			}
 			auditPort.recordTransition(payment.id(), PaymentStatus.PROCESSING, payment.status());
+			paymentEventPort.record(PaymentEvent.finalStatusReached(payment, Instant.now()));
 			return true;
 		}));
 		if (!stored) {

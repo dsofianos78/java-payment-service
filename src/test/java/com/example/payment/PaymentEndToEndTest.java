@@ -17,7 +17,12 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -32,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -89,6 +95,7 @@ class PaymentEndToEndTest {
 		registry.add("spring.cloud.openfeign.client.config.payment-system.read-timeout", () -> "300");
 		// Reconciliation runs often here; with the 2m threshold it only finds payments a test has backdated.
 		registry.add("payment.reconciliation.interval", () -> "200ms");
+		registry.add("payment.events.relay-interval", () -> "100ms");
 	}
 
 	@Autowired
@@ -99,6 +106,9 @@ class PaymentEndToEndTest {
 
 	@Autowired
 	KafkaTemplate<String, PaymentProcessingMessage> kafkaTemplate;
+
+	@Autowired
+	ConsumerFactory<?, ?> consumerFactory;
 
 	@Value("${payment.security.local-jwt-secret}")
 	String localJwtSecret;
@@ -352,6 +362,38 @@ class PaymentEndToEndTest {
 				.param(paymentId).query(Integer.class).single()).isEqualTo(1);
 		// Asked, never sent again.
 		externalSystems.verify(1, postRequestedFor(urlEqualTo("/payment-orders")).withHeader("Idempotency-Key", equalTo(paymentId)));
+	}
+
+	// What another service sees: one PAYMENT_COMPLETED on payment-events, keyed by the payment, sent by the relay
+	// from the outbox row written with the status change.
+	@Test
+	void aCompletedPaymentIsPublishedOnceOnPaymentEvents() throws Exception {
+		String paymentId = createPayment("Published event");
+		execute(paymentId);
+		awaitStatus(paymentId, "COMPLETED");
+
+		Properties asText = new Properties();
+		asText.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+		asText.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+		List<String> received = new ArrayList<>();
+		try (Consumer<?, ?> consumer = consumerFactory.createConsumer("events-test-" + UUID.randomUUID(), null, null, asText)) {
+			consumer.subscribe(List.of("payment-events"));
+			await().during(Duration.ofMillis(500)).untilAsserted(() -> {
+				for (ConsumerRecord<?, ?> record : consumer.poll(Duration.ofMillis(100))) {
+					if (paymentId.equals(record.key())) {
+						received.add((String) record.value());
+					}
+				}
+				assertThat(received).hasSize(1);
+			});
+		}
+
+		String message = received.getFirst();
+		assertThat((String) JsonPath.read(message, "$.type")).isEqualTo("PAYMENT_COMPLETED");
+		assertThat((String) JsonPath.read(message, "$.paymentId")).isEqualTo(paymentId);
+		assertThat((String) JsonPath.read(message, "$.eventId")).isEqualTo(jdbc.sql(
+				"SELECT event_id::text FROM payment_outbox WHERE payment_id = ?::uuid").param(paymentId).query(String.class).single());
+		assertThat((String) JsonPath.read(message, "$.currency")).isEqualTo("EUR");
 	}
 
 	// Kafka delivers at least once, so the same message twice is normal. The second finds the payment past

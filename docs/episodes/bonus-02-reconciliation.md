@@ -1,6 +1,6 @@
 # Bonus Episode 02 — Reconciliation
 
-Git tag: `bonus-02-reconciliation` · Builds on: [Bonus Episode 01 — Security](bonus-01-security.md)
+Git tag: `bonus-02-reconciliation` · Builds on: [Bonus Episode 01 — Security](bonus-01-security.md) · Next: [Bonus Episode 03 — Payment Events](bonus-03-payment-events.md)
 
 ## Goal
 

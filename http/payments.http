@@ -511,3 +511,6 @@ Authorization: Bearer {{token}}
 
 ### Bonus 02 — reconciliation counters -> payments_reconciled_total{result="executed"}
 GET {{baseUrl}}/actuator/prometheus
+
+### Bonus 03 — events waiting for the relay -> payment_events_pending 0.0 (1.0 or more while Kafka is stopped)
+GET {{baseUrl}}/actuator/prometheus

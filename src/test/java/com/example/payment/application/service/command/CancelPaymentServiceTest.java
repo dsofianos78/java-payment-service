@@ -10,6 +10,8 @@ import com.example.payment.application.usecase.command.CancelPaymentCommand;
 import com.example.payment.application.validation.AccountStateValidator;
 import com.example.payment.domain.valueobject.AccountStatus;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.event.PaymentEvent;
+import com.example.payment.domain.event.PaymentEventType;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
@@ -37,6 +39,7 @@ class CancelPaymentServiceTest {
 
 	private final List<PaymentStatus> savedStatuses = new ArrayList<>();
 	private final List<String> audited = new ArrayList<>();
+	private final List<PaymentEvent> events = new ArrayList<>();
 	private boolean executedMeanwhile;
 
 	private final CancelPaymentService service = new CancelPaymentService(new PaymentRepository() {
@@ -65,7 +68,7 @@ class CancelPaymentServiceTest {
 		}
 	}, new AccountStateValidator(accountId -> Optional.of(new Account(AccountStatus.ACTIVE, "CUST-1"))
 			.filter(account -> accountId.value().equals("ACC-1"))), // CUST-1 holds ACC-1, the payment's source
-			(paymentId, from, to) -> audited.add(from + "->" + to), mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
+			(paymentId, from, to) -> audited.add(from + "->" + to), events::add, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 
 	@Test
 	void cancelsAndStoresACreatedPayment() {
@@ -74,6 +77,7 @@ class CancelPaymentServiceTest {
 		assertThat(result.status()).isEqualTo(PaymentStatus.CANCELLED);
 		assertThat(savedStatuses).containsExactly(PaymentStatus.CANCELLED);
 		assertThat(audited).containsExactly("CREATED->CANCELLED");
+		assertThat(events).extracting(PaymentEvent::type).containsExactly(PaymentEventType.PAYMENT_CANCELLED);
 	}
 
 	@Test
@@ -84,6 +88,7 @@ class CancelPaymentServiceTest {
 				.isThrownBy(() -> service.cancelPayment(new CancelPaymentCommand(stored.id().toString(), "CUST-1")))
 				.withMessage("Payment " + stored.id() + " was changed by another request and cannot become CANCELLED");
 		assertThat(audited).isEmpty();
+		assertThat(events).isEmpty();
 	}
 
 	@Test

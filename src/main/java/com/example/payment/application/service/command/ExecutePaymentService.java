@@ -8,12 +8,14 @@ import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.primary.ExecutePaymentUseCase;
 import com.example.payment.application.port.secondary.AuditPort;
 import com.example.payment.application.port.secondary.PaymentAuthorizationPort;
+import com.example.payment.application.port.secondary.PaymentEventPort;
 import com.example.payment.application.port.secondary.PaymentExecutionPort;
 import com.example.payment.application.port.secondary.PaymentLimitPort;
 import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.event.PaymentEvent;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentStatus;
 import org.slf4j.Logger;
@@ -22,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Duration;
+import java.time.Instant;
 
 /**
  * Authorization -> limit check -> execution. Each step asks the system that
@@ -41,17 +44,19 @@ public class ExecutePaymentService implements ExecutePaymentUseCase {
 	private final PaymentLimitPort paymentLimitPort;
 	private final PaymentExecutionPort paymentExecutionPort;
 	private final AuditPort auditPort;
+	private final PaymentEventPort paymentEventPort;
 	private final PaymentMetricsPort paymentMetricsPort;
 	private final TransactionOperations transactions;
 
 	public ExecutePaymentService(PaymentRepository paymentRepository, PaymentAuthorizationPort paymentAuthorizationPort,
 			PaymentLimitPort paymentLimitPort, PaymentExecutionPort paymentExecutionPort, AuditPort auditPort,
-			PaymentMetricsPort paymentMetricsPort, TransactionOperations transactions) {
+			PaymentEventPort paymentEventPort, PaymentMetricsPort paymentMetricsPort, TransactionOperations transactions) {
 		this.paymentRepository = paymentRepository;
 		this.paymentAuthorizationPort = paymentAuthorizationPort;
 		this.paymentLimitPort = paymentLimitPort;
 		this.paymentExecutionPort = paymentExecutionPort;
 		this.auditPort = auditPort;
+		this.paymentEventPort = paymentEventPort;
 		this.paymentMetricsPort = paymentMetricsPort;
 		this.transactions = transactions;
 	}
@@ -108,7 +113,7 @@ public class ExecutePaymentService implements ExecutePaymentUseCase {
 		return payment;
 	}
 
-	// The new status and its audit record commit together or not at all. The status is only written if the
+	// The new status, its audit record and, for a final status, its event commit together or not at all. The status is only written if the
 	// stored one is still `from`, so a request that loaded the payment before another one changed it loses.
 	private void store(Payment payment, PaymentStatus from) {
 		transactions.executeWithoutResult(tx -> {
@@ -117,6 +122,9 @@ public class ExecutePaymentService implements ExecutePaymentUseCase {
 						"Payment " + payment.id() + " was changed by another request and cannot become " + payment.status());
 			}
 			auditPort.recordTransition(payment.id(), from, payment.status());
+			if (payment.status().isFinal()) {
+				paymentEventPort.record(PaymentEvent.finalStatusReached(payment, Instant.now()));
+			}
 		});
 		log.info("Payment {} moved from {} to {}", payment.id(), from, payment.status());
 		paymentMetricsPort.statusChanged(payment.status());

@@ -6,6 +6,8 @@ import com.example.payment.application.port.secondary.PaymentExecutionPort.Outco
 import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.event.PaymentEvent;
+import com.example.payment.domain.event.PaymentEventType;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
@@ -38,6 +40,7 @@ class ReconcilePaymentsServiceTest {
 	private final Map<PaymentId, Outcome> answers = new HashMap<>();
 	private final Map<PaymentId, PaymentStatus> stored = new HashMap<>();
 	private final List<String> audited = new ArrayList<>();
+	private final List<PaymentEvent> events = new ArrayList<>();
 	// A payment another instance's run has already moved on.
 	private PaymentId reconciledElsewhere;
 	private final PaymentMetricsPort metrics = mock(PaymentMetricsPort.class);
@@ -89,7 +92,7 @@ class ReconcilePaymentsServiceTest {
 	private final AuditPort audit = (paymentId, from, to) -> audited.add(from + "->" + to);
 
 	private final ReconcilePaymentsService service = new ReconcilePaymentsService(repository, paymentSystem, audit,
-			metrics, TransactionOperations.withoutTransaction());
+			events::add, metrics, TransactionOperations.withoutTransaction());
 
 	@Test
 	void asksOnlyAboutPaymentsProcessingForLongerThanTheThreshold() {
@@ -106,6 +109,7 @@ class ReconcilePaymentsServiceTest {
 
 		assertThat(stored).containsEntry(payment.id(), PaymentStatus.COMPLETED);
 		assertThat(audited).containsExactly("PROCESSING->COMPLETED");
+		assertThat(events).extracting(PaymentEvent::type).containsExactly(PaymentEventType.PAYMENT_COMPLETED);
 		verify(metrics).statusChanged(PaymentStatus.COMPLETED);
 		verify(metrics).reconciled(Outcome.EXECUTED);
 	}
@@ -118,6 +122,7 @@ class ReconcilePaymentsServiceTest {
 
 		assertThat(stored).containsEntry(payment.id(), PaymentStatus.FAILED);
 		assertThat(audited).containsExactly("PROCESSING->FAILED");
+		assertThat(events).extracting(PaymentEvent::type).containsExactly(PaymentEventType.PAYMENT_FAILED);
 		verify(metrics).reconciled(Outcome.REJECTED);
 	}
 
@@ -142,6 +147,7 @@ class ReconcilePaymentsServiceTest {
 		assertThat(payment.status()).isEqualTo(PaymentStatus.PROCESSING);
 		assertThat(stored).isEmpty();
 		assertThat(audited).isEmpty();
+		assertThat(events).isEmpty();
 		verify(metrics).reconciled(Outcome.UNKNOWN);
 	}
 
@@ -164,6 +170,7 @@ class ReconcilePaymentsServiceTest {
 		service.reconcilePayments(Duration.ofMinutes(2));
 
 		assertThat(audited).isEmpty();
+		assertThat(events).isEmpty();
 		verify(metrics, never()).reconciled(Outcome.EXECUTED);
 	}
 

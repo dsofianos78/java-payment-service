@@ -8,6 +8,7 @@ import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.infrastructure.adapter.secondary.persistence.AuditPersistenceAdapter;
+import com.example.payment.infrastructure.adapter.secondary.persistence.OutboxPersistenceAdapter;
 import com.example.payment.infrastructure.adapter.secondary.persistence.PaymentPersistenceAdapter;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import org.junit.jupiter.api.Test;
@@ -81,6 +82,9 @@ class PaymentTransactionsTest {
 	@MockitoSpyBean
 	PaymentPersistenceAdapter payments;
 
+	@MockitoSpyBean
+	OutboxPersistenceAdapter outbox;
+
 	@Test
 	void everyStatusChangeIsAudited() {
 		Payment payment = create(UUID.randomUUID().toString());
@@ -90,6 +94,8 @@ class PaymentTransactionsTest {
 		assertThat(storedStatus(payment)).isEqualTo("COMPLETED");
 		assertThat(auditTrail(payment)).containsExactly(
 				"CREATED->AUTHORIZED", "AUTHORIZED->PROCESSING", "PROCESSING->COMPLETED");
+		assertThat(jdbc.sql("SELECT event_type FROM payment_outbox WHERE payment_id = ?").param(payment.id().value())
+				.query(String.class).list()).containsExactly("PAYMENT_COMPLETED");
 	}
 
 	@Test
@@ -116,6 +122,22 @@ class PaymentTransactionsTest {
 		// stays PROCESSING: "sent, outcome not recorded". It can't be executed again.
 		assertThat(storedStatus(payment)).isEqualTo("PROCESSING");
 		assertThat(auditTrail(payment)).containsExactly("CREATED->AUTHORIZED", "AUTHORIZED->PROCESSING");
+	}
+
+	// The event is the third write in the transaction. If it fails, COMPLETED and its audit row go with it:
+	// there is never a completed payment nobody was told about, or an event for a change that didn't happen.
+	@Test
+	void aFailedEventWriteRollsBackTheStatusChangeAndItsAudit() {
+		Payment payment = create(UUID.randomUUID().toString());
+		doThrow(new RuntimeException("outbox down")).when(outbox).record(any());
+
+		assertThatRuntimeException().isThrownBy(() -> executePayment.executePayment(execute(payment)))
+				.withMessage("outbox down");
+
+		assertThat(storedStatus(payment)).isEqualTo("PROCESSING");
+		assertThat(auditTrail(payment)).containsExactly("CREATED->AUTHORIZED", "AUTHORIZED->PROCESSING");
+		assertThat(jdbc.sql("SELECT count(*) FROM payment_outbox WHERE payment_id = ?").param(payment.id().value())
+				.query(Integer.class).single()).isZero();
 	}
 
 	@Test

@@ -55,6 +55,7 @@ first, and build on it in order.
 | | **Bonus episodes** | |
 | B1 | [Security](docs/episodes/bonus-01-security.md) | `bonus-01-security` |
 | B2 | [Reconciliation](docs/episodes/bonus-02-reconciliation.md) | `bonus-02-reconciliation` |
+| B3 | [Payment Events](docs/episodes/bonus-03-payment-events.md) | `bonus-03-payment-events` |
 
 ## License
 
