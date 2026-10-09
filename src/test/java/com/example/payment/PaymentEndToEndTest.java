@@ -133,6 +133,16 @@ class PaymentEndToEndTest {
 	}
 
 	@Test
+	void publishesTheApiContract() throws Exception {
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.paths['/payments'].post").exists())
+				.andExpect(jsonPath("$.paths['/payments/{paymentId}'].get").exists())
+				.andExpect(jsonPath("$.paths['/payments/{paymentId}/execute'].post").exists())
+				.andExpect(jsonPath("$.paths['/payments/{paymentId}/cancel'].post").exists());
+	}
+
+	@Test
 	void unknownPaymentIs404() throws Exception {
 		UUID unknown = UUID.randomUUID();
 

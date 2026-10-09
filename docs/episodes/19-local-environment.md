@@ -1,6 +1,6 @@
 # Episode 19 — Production-Style Local Environment
 
-Git tag: `episode-19-local-environment` · Previous: [Episode 18 — Testing Strategy](18-testing-strategy.md) · Next: Episode 20 — Final Architecture Review
+Git tag: `episode-19-local-environment` · Previous: [Episode 18 — Testing Strategy](18-testing-strategy.md) · Next: [Episode 20 — Final Architecture Review](20-final-review.md)
 
 ## Goal
 

@@ -48,6 +48,7 @@ git checkout episode-01-working-payment
 | 17 | [Asynchronous Processing](docs/episodes/17-async-processing.md) | `episode-17-async-processing` |
 | 18 | [Testing Strategy](docs/episodes/18-testing-strategy.md) | `episode-18-testing-strategy` |
 | 19 | [Production-Style Local Environment](docs/episodes/19-local-environment.md) | `episode-19-local-environment` |
+| 20 | [Final Architecture Review](docs/episodes/20-final-review.md) | `episode-20-final-review` |
 
 ## License
 

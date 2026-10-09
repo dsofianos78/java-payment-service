@@ -12,6 +12,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import jakarta.persistence.Entity;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
 /**
  * The architecture as executable documentation: each rule is a boundary the
@@ -23,20 +24,23 @@ class ArchitectureTest {
 	private static final String DOMAIN = "com.example.payment.domain..";
 	private static final String WEB = "com.example.payment.infrastructure.adapter.primary.web..";
 
+	// Infrastructure -> Application -> Domain, never the reverse (docs/episodes/20).
+	// Config wires everything, so it may see every layer and no layer may see it.
 	@ArchTest
-	static final ArchRule domainDoesNotDependOnInfrastructure = noClasses()
-			.that().resideInAPackage(DOMAIN)
-			.should().dependOnClassesThat().resideInAPackage("com.example.payment.infrastructure..");
+	static final ArchRule dependenciesPointInwards = layeredArchitecture().consideringOnlyDependenciesInLayers()
+			.layer("Config").definedBy("com.example.payment.config..")
+			.layer("Infrastructure").definedBy("com.example.payment.infrastructure..")
+			.layer("Application").definedBy("com.example.payment.application..")
+			.layer("Domain").definedBy(DOMAIN)
+			.whereLayer("Config").mayNotBeAccessedByAnyLayer()
+			.whereLayer("Infrastructure").mayOnlyBeAccessedByLayers("Config")
+			.whereLayer("Application").mayOnlyBeAccessedByLayers("Infrastructure", "Config")
+			.whereLayer("Domain").mayOnlyBeAccessedByLayers("Application", "Infrastructure", "Config");
 
 	@ArchTest
 	static final ArchRule domainDoesNotDependOnFrameworks = noClasses()
 			.that().resideInAPackage(DOMAIN)
 			.should().dependOnClassesThat().resideInAnyPackage("org.springframework..", "jakarta.persistence..", "feign..");
-
-	@ArchTest
-	static final ArchRule applicationDoesNotDependOnInfrastructure = noClasses()
-			.that().resideInAPackage("com.example.payment.application..")
-			.should().dependOnClassesThat().resideInAPackage("com.example.payment.infrastructure..");
 
 	@ArchTest
 	static final ArchRule domainDoesNotUsePersistenceEntities = noClasses()
