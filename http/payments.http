@@ -332,3 +332,20 @@ Content-Type: application/json
 ### Episode 13 — execute it -> 200 COMPLETED; three rows in payment_audit (see docs/episodes/13) (paste the paymentId above)
 @auditedPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{auditedPaymentId}}/execute
+
+### Episode 15 — create with your own correlation ID -> 201, X-Correlation-Id: episode-15-demo in the response and in every log line
+POST {{baseUrl}}/payments
+Idempotency-Key: episode-15-demo-key-1
+X-Correlation-Id: episode-15-demo
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 15015"
+}
+
+### Episode 15 — the metrics Prometheus scrapes (look for payments_total, payment_execution_duration_seconds)
+GET {{baseUrl}}/actuator/prometheus

@@ -5,6 +5,7 @@ import com.example.payment.application.exception.IdempotencyKeyMismatchException
 import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
 import com.example.payment.application.port.secondary.IdempotencyPort;
+import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.validation.AccountStateValidator;
@@ -13,6 +14,9 @@ import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentReference;
+import com.example.payment.domain.valueobject.PaymentStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
@@ -27,16 +31,20 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 
 	static final int MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 
+	private static final Logger log = LoggerFactory.getLogger(CreatePaymentService.class);
+
 	private final AccountStateValidator accountStateValidator;
 	private final PaymentRepository paymentRepository;
 	private final IdempotencyPort idempotencyPort;
+	private final PaymentMetricsPort paymentMetricsPort;
 	private final TransactionOperations transactions;
 
 	public CreatePaymentService(AccountStateValidator accountStateValidator, PaymentRepository paymentRepository,
-			IdempotencyPort idempotencyPort, TransactionOperations transactions) {
+			IdempotencyPort idempotencyPort, PaymentMetricsPort paymentMetricsPort, TransactionOperations transactions) {
 		this.accountStateValidator = accountStateValidator;
 		this.paymentRepository = paymentRepository;
 		this.idempotencyPort = idempotencyPort;
+		this.paymentMetricsPort = paymentMetricsPort;
 		this.transactions = transactions;
 	}
 
@@ -86,6 +94,10 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 		if (!claimed) {
 			return replay(idempotencyPort.find(key).orElseThrow(), fingerprint);
 		}
+		// A replay is not a new payment, so only the winner gets here. Ids and statuses only: no accounts, amounts
+		// or references in logs or metrics.
+		log.info("Payment {} created", payment.id());
+		paymentMetricsPort.statusChanged(PaymentStatus.CREATED);
 		return payment;
 	}
 

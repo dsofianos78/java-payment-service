@@ -5,6 +5,7 @@ import com.example.payment.application.exception.IdempotencyKeyInProgressExcepti
 import com.example.payment.application.exception.IdempotencyKeyMismatchException;
 import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.secondary.IdempotencyPort;
+import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.validation.AccountStateValidator;
@@ -30,6 +31,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.mockito.Mockito.mock;
 
 class CreatePaymentServiceTest {
 
@@ -78,7 +80,7 @@ class CreatePaymentServiceTest {
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return saved.stream().filter(p -> p.id().equals(paymentId)).findFirst();
 		}
-	}, idempotency, TransactionOperations.withoutTransaction());
+	}, idempotency, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 
 	@Test
 	void createsPaymentWhenBothAccountsAreActive() {
@@ -242,7 +244,7 @@ class CreatePaymentServiceTest {
 					public Optional<Payment> findById(PaymentId paymentId) {
 						return saved.stream().filter(p -> p.id().equals(paymentId)).findFirst();
 					}
-				}, racingPort, TransactionOperations.withoutTransaction());
+				}, racingPort, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 	}
 
 	private static CreatePaymentCommand command(String amount, String idempotencyKey) {

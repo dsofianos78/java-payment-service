@@ -2,6 +2,9 @@ package com.example.payment.infrastructure.adapter.secondary.feign;
 
 import com.example.payment.application.exception.ExternalSystemUnavailableException;
 import com.example.payment.config.FeignConfiguration;
+import com.example.payment.infrastructure.observability.PaymentMetrics;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
@@ -34,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * The real Feign clients against fake authorization and limit systems over
  * real HTTP. Only Feign and JSON are started.
  */
-@SpringBootTest(classes = {FeignConfiguration.class, AuthorizationAdapter.class, LimitAdapter.class})
+@SpringBootTest(classes = {FeignConfiguration.class, AuthorizationAdapter.class, LimitAdapter.class,
+		PaymentMetrics.class, SimpleMeterRegistry.class})
 @ImportAutoConfiguration({FeignAutoConfiguration.class, HttpMessageConvertersAutoConfiguration.class,
 		JacksonAutoConfiguration.class})
 class AuthorizationAndLimitAdapterTest {
@@ -56,6 +60,9 @@ class AuthorizationAndLimitAdapterTest {
 
 	@Autowired
 	LimitAdapter limitAdapter;
+
+	@Autowired
+	MeterRegistry meterRegistry;
 
 	private final Payment payment = Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
 			new Money(new BigDecimal("250.00"), Currency.EUR), new PaymentReference("Invoice 12345"));
@@ -88,10 +95,12 @@ class AuthorizationAndLimitAdapterTest {
 	@Test
 	void authorizationSystemDownIsUnavailable() {
 		externalSystems.stubFor(post("/authorizations").willReturn(aResponse().withStatus(503)));
+		double errorsBefore = paymentSystemErrors("authorization");
 
 		assertThatThrownBy(() -> authorizationAdapter.isAuthorized(payment))
 				.isInstanceOf(ExternalSystemUnavailableException.class)
 				.hasMessage("Authorization system is unavailable");
+		assertThat(paymentSystemErrors("authorization")).isEqualTo(errorsBefore + 1);
 	}
 
 	@Test
@@ -113,9 +122,15 @@ class AuthorizationAndLimitAdapterTest {
 	@Test
 	void limitSystemDownIsUnavailable() {
 		externalSystems.stubFor(post("/limit-checks").willReturn(aResponse().withStatus(500)));
+		double errorsBefore = paymentSystemErrors("limit");
 
 		assertThatThrownBy(() -> limitAdapter.isWithinLimit(payment))
 				.isInstanceOf(ExternalSystemUnavailableException.class)
 				.hasMessage("Limit system is unavailable");
+		assertThat(paymentSystemErrors("limit")).isEqualTo(errorsBefore + 1);
+	}
+
+	private double paymentSystemErrors(String system) {
+		return meterRegistry.counter("external.payment.errors", "system", system).count();
 	}
 }

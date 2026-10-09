@@ -5,6 +5,9 @@ import com.example.payment.config.FeignConfiguration;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.AccountStatus;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import com.example.payment.infrastructure.observability.PaymentMetrics;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,7 +33,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * The real Feign client against a fake account system over real HTTP. Only
  * Feign and JSON are started: no web server, no database.
  */
-@SpringBootTest(classes = {FeignConfiguration.class, AccountEnquiryFeignAdapter.class})
+@SpringBootTest(classes = {FeignConfiguration.class, AccountEnquiryFeignAdapter.class, PaymentMetrics.class,
+		SimpleMeterRegistry.class})
 @ImportAutoConfiguration({FeignAutoConfiguration.class, HttpMessageConvertersAutoConfiguration.class,
 		JacksonAutoConfiguration.class})
 class AccountEnquiryFeignAdapterTest {
@@ -50,6 +54,9 @@ class AccountEnquiryFeignAdapterTest {
 
 	@Autowired
 	AccountEnquiryFeignAdapter adapter;
+
+	@Autowired
+	MeterRegistry meterRegistry;
 
 	@ParameterizedTest
 	@CsvSource({"OPEN, ACTIVE", "FROZEN, BLOCKED", "CLOSED, CLOSED"})
@@ -81,8 +88,10 @@ class AccountEnquiryFeignAdapterTest {
 	@Test
 	void serverErrorIsNotMistakenForUnknownAccount() {
 		accountSystem.stubFor(get("/accounts/ACC-1").willReturn(aResponse().withStatus(503)));
+		double errorsBefore = meterRegistry.counter("external.account.errors").count();
 
 		assertThatThrownBy(() -> adapter.findStatus(new AccountId("ACC-1"))).isInstanceOf(AccountUnavailableException.class)
 				.hasMessage("Account system is unavailable");
+		assertThat(meterRegistry.counter("external.account.errors").count()).isEqualTo(errorsBefore + 1);
 	}
 }

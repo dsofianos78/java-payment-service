@@ -13,7 +13,7 @@ Requirements: Java 25 and Docker. Maven is provided by the wrapper.
 
 ```bash
 ./mvnw verify            # build and run all tests
-./mvnw spring-boot:run   # start on http://localhost:8080 (PostgreSQL and a fake account system start from compose.yaml)
+./mvnw spring-boot:run   # start on http://localhost:8080 (PostgreSQL, a fake account system, Prometheus and Grafana start from compose.yaml)
 ```
 
 Example requests for each episode are in [http/payments.http](http/payments.http).
@@ -42,6 +42,7 @@ git checkout episode-01-working-payment
 | 12 | [Authorization and Limits](docs/episodes/12-authorization-limits.md) | `episode-12-authorization-limits` |
 | 13 | [Transactions and Audit](docs/episodes/13-transactions-audit.md) | `episode-13-transactions-audit` |
 | 14 | [Architecture Tests](docs/episodes/14-architecture-tests.md) | `episode-14-architecture-tests` |
+| 15 | [Observability](docs/episodes/15-observability.md) | `episode-15-observability` |
 
 ## License
 

@@ -5,25 +5,32 @@ import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.primary.CancelPaymentUseCase;
 import com.example.payment.application.port.secondary.AuditPort;
+import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CancelPaymentCommand;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
 @Service
 public class CancelPaymentService implements CancelPaymentUseCase {
 
+	private static final Logger log = LoggerFactory.getLogger(CancelPaymentService.class);
+
 	private final PaymentRepository paymentRepository;
 	private final AuditPort auditPort;
+	private final PaymentMetricsPort paymentMetricsPort;
 	private final TransactionOperations transactions;
 
 	public CancelPaymentService(PaymentRepository paymentRepository, AuditPort auditPort,
-			TransactionOperations transactions) {
+			PaymentMetricsPort paymentMetricsPort, TransactionOperations transactions) {
 		this.paymentRepository = paymentRepository;
 		this.auditPort = auditPort;
+		this.paymentMetricsPort = paymentMetricsPort;
 		this.transactions = transactions;
 	}
 
@@ -56,6 +63,8 @@ public class CancelPaymentService implements CancelPaymentUseCase {
 			}
 			auditPort.recordTransition(paymentId, from, PaymentStatus.CANCELLED);
 		});
+		log.info("Payment {} moved from {} to {}", paymentId, from, PaymentStatus.CANCELLED);
+		paymentMetricsPort.statusChanged(PaymentStatus.CANCELLED);
 		return payment;
 	}
 }

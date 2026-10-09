@@ -22,5 +22,26 @@ services:
     volumes:
       - ./wiremock:/home/wiremock:ro
 
+  # Scrapes the running app's /actuator/prometheus every 5s (observability/prometheus.yml).
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # http://localhost:3000, anonymous admin, Prometheus already set up as the data source. Local use only.
+  grafana:
+    image: grafana/grafana:12.2.1
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./observability/grafana:/etc/grafana/provisioning:ro
+
 volumes:
   payments-data:

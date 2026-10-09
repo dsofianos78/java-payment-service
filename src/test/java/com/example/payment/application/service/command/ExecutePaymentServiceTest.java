@@ -7,6 +7,7 @@ import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.secondary.AuditPort;
 import com.example.payment.application.port.secondary.PaymentExecutionPort.Outcome;
+import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.domain.entity.Payment;
@@ -27,6 +28,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.mockito.Mockito.mock;
 
 class ExecutePaymentServiceTest {
 
@@ -142,7 +144,7 @@ class ExecutePaymentServiceTest {
 			public Optional<Payment> findById(PaymentId paymentId) {
 				return Optional.of(authorizedEarlier);
 			}
-		}, this::authorize, payment -> true, payment -> Outcome.EXECUTED, audit, TransactionOperations.withoutTransaction());
+		}, this::authorize, payment -> true, payment -> Outcome.EXECUTED, audit, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 
 		assertThat(service.executePayment(command(stored.id())).status()).isEqualTo(PaymentStatus.COMPLETED);
 		assertThat(authorizationRequests).isZero();
@@ -181,7 +183,7 @@ class ExecutePaymentServiceTest {
 		return new ExecutePaymentService(repository, this::authorize, payment -> withinLimit, payment -> {
 			statusWhenSent.add(payment.status());
 			return outcome;
-		}, audit, TransactionOperations.withoutTransaction());
+		}, audit, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 	}
 
 	private boolean authorize(Payment payment) {

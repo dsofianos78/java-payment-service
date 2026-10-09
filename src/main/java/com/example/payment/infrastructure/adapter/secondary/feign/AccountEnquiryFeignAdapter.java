@@ -4,7 +4,10 @@ import com.example.payment.application.exception.AccountUnavailableException;
 import com.example.payment.application.port.secondary.AccountEnquiryPort;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.AccountStatus;
+import com.example.payment.infrastructure.observability.PaymentMetrics;
 import feign.FeignException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
@@ -17,10 +20,14 @@ import java.util.Optional;
 @Component
 public class AccountEnquiryFeignAdapter implements AccountEnquiryPort {
 
-	private final AccountClient accountClient;
+	private static final Logger log = LoggerFactory.getLogger(AccountEnquiryFeignAdapter.class);
 
-	AccountEnquiryFeignAdapter(AccountClient accountClient) {
+	private final AccountClient accountClient;
+	private final PaymentMetrics paymentMetrics;
+
+	AccountEnquiryFeignAdapter(AccountClient accountClient, PaymentMetrics paymentMetrics) {
 		this.accountClient = accountClient;
+		this.paymentMetrics = paymentMetrics;
 	}
 
 	// ponytail: Feign default timeouts, no retries; Episode 16 adds them
@@ -33,7 +40,10 @@ public class AccountEnquiryFeignAdapter implements AccountEnquiryPort {
 			return Optional.empty();
 		}
 		// 5xx, timeout, connection refused: the account system gave no answer, which is not "no such account".
+		// Only the status is logged: Feign's message holds the URL, which holds the account ID.
 		catch (FeignException e) {
+			log.warn("Account system unavailable (status {})", e.status());
+			paymentMetrics.accountSystemError();
 			throw new AccountUnavailableException(e);
 		}
 	}

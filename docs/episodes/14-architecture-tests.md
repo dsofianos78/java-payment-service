@@ -1,6 +1,6 @@
 # Episode 14 — Architecture Tests
 
-Git tag: `episode-14-architecture-tests` · Previous: [Episode 13 — Transactions and Audit](13-transactions-audit.md) · Next: Episode 15 — Observability
+Git tag: `episode-14-architecture-tests` · Previous: [Episode 13 — Transactions and Audit](13-transactions-audit.md) · Next: [Episode 15 — Observability](15-observability.md)
 
 ## Goal
 

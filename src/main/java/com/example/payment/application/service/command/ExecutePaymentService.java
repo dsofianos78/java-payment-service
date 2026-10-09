@@ -10,13 +10,18 @@ import com.example.payment.application.port.secondary.AuditPort;
 import com.example.payment.application.port.secondary.PaymentAuthorizationPort;
 import com.example.payment.application.port.secondary.PaymentExecutionPort;
 import com.example.payment.application.port.secondary.PaymentLimitPort;
+import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
+
+import java.time.Duration;
 
 /**
  * Authorization -> limit check -> execution. Each step asks the system that
@@ -29,21 +34,25 @@ import org.springframework.transaction.support.TransactionOperations;
 @Service
 public class ExecutePaymentService implements ExecutePaymentUseCase {
 
+	private static final Logger log = LoggerFactory.getLogger(ExecutePaymentService.class);
+
 	private final PaymentRepository paymentRepository;
 	private final PaymentAuthorizationPort paymentAuthorizationPort;
 	private final PaymentLimitPort paymentLimitPort;
 	private final PaymentExecutionPort paymentExecutionPort;
 	private final AuditPort auditPort;
+	private final PaymentMetricsPort paymentMetricsPort;
 	private final TransactionOperations transactions;
 
 	public ExecutePaymentService(PaymentRepository paymentRepository, PaymentAuthorizationPort paymentAuthorizationPort,
 			PaymentLimitPort paymentLimitPort, PaymentExecutionPort paymentExecutionPort, AuditPort auditPort,
-			TransactionOperations transactions) {
+			PaymentMetricsPort paymentMetricsPort, TransactionOperations transactions) {
 		this.paymentRepository = paymentRepository;
 		this.paymentAuthorizationPort = paymentAuthorizationPort;
 		this.paymentLimitPort = paymentLimitPort;
 		this.paymentExecutionPort = paymentExecutionPort;
 		this.auditPort = auditPort;
+		this.paymentMetricsPort = paymentMetricsPort;
 		this.transactions = transactions;
 	}
 
@@ -82,7 +91,10 @@ public class ExecutePaymentService implements ExecutePaymentUseCase {
 
 		// The money moves here, outside any transaction of ours: a rollback can't take it back.
 		// If storing the outcome fails, the payment stays PROCESSING, which is true: we don't know.
-		switch (paymentExecutionPort.execute(payment)) {
+		long started = System.nanoTime();
+		PaymentExecutionPort.Outcome outcome = paymentExecutionPort.execute(payment);
+		paymentMetricsPort.executionTook(Duration.ofNanos(System.nanoTime() - started));
+		switch (outcome) {
 			case EXECUTED -> payment.complete();
 			case REJECTED -> payment.fail();
 		}
@@ -100,6 +112,8 @@ public class ExecutePaymentService implements ExecutePaymentUseCase {
 			}
 			auditPort.recordTransition(payment.id(), from, payment.status());
 		});
+		log.info("Payment {} moved from {} to {}", payment.id(), from, payment.status());
+		paymentMetricsPort.statusChanged(payment.status());
 	}
 
 	private static void transition(Runnable step) {

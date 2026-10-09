@@ -3,8 +3,11 @@ package com.example.payment.infrastructure.adapter.secondary.feign;
 import com.example.payment.application.exception.ExternalSystemUnavailableException;
 import com.example.payment.application.port.secondary.PaymentAuthorizationPort;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.infrastructure.observability.PaymentMetrics;
 import com.example.payment.infrastructure.adapter.secondary.feign.AuthorizationClient.AuthorizationRequest;
 import feign.FeignException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,10 +18,14 @@ import org.springframework.stereotype.Component;
 @Component
 public class AuthorizationAdapter implements PaymentAuthorizationPort {
 
-	private final AuthorizationClient authorizationClient;
+	private static final Logger log = LoggerFactory.getLogger(AuthorizationAdapter.class);
 
-	AuthorizationAdapter(AuthorizationClient authorizationClient) {
+	private final AuthorizationClient authorizationClient;
+	private final PaymentMetrics paymentMetrics;
+
+	AuthorizationAdapter(AuthorizationClient authorizationClient, PaymentMetrics paymentMetrics) {
 		this.authorizationClient = authorizationClient;
+		this.paymentMetrics = paymentMetrics;
 	}
 
 	// ponytail: Feign default timeouts, no retries; Episode 16 adds them
@@ -31,6 +38,8 @@ public class AuthorizationAdapter implements PaymentAuthorizationPort {
 					payment.amount().amount(), payment.amount().currency().name())).decision();
 		}
 		catch (FeignException e) {
+			log.warn("Authorization system unavailable (status {})", e.status());
+			paymentMetrics.paymentSystemError("authorization");
 			throw new ExternalSystemUnavailableException("Authorization system", e);
 		}
 		return switch (decision) {

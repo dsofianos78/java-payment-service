@@ -3,6 +3,7 @@ package com.example.payment.application.service.command;
 import com.example.payment.application.exception.InvalidPaymentStateException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CancelPaymentCommand;
 import com.example.payment.domain.entity.Payment;
@@ -23,6 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.mockito.Mockito.mock;
 
 class CancelPaymentServiceTest {
 
@@ -52,7 +54,7 @@ class CancelPaymentServiceTest {
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return Optional.of(stored).filter(p -> p.id().equals(paymentId));
 		}
-	}, (paymentId, from, to) -> audited.add(from + "->" + to), TransactionOperations.withoutTransaction());
+	}, (paymentId, from, to) -> audited.add(from + "->" + to), mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 
 	@Test
 	void cancelsAndStoresACreatedPayment() {

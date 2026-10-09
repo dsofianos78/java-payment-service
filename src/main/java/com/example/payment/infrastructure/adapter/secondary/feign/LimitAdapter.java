@@ -3,8 +3,11 @@ package com.example.payment.infrastructure.adapter.secondary.feign;
 import com.example.payment.application.exception.ExternalSystemUnavailableException;
 import com.example.payment.application.port.secondary.PaymentLimitPort;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.infrastructure.observability.PaymentMetrics;
 import com.example.payment.infrastructure.adapter.secondary.feign.LimitClient.LimitCheckRequest;
 import feign.FeignException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,10 +17,14 @@ import org.springframework.stereotype.Component;
 @Component
 public class LimitAdapter implements PaymentLimitPort {
 
-	private final LimitClient limitClient;
+	private static final Logger log = LoggerFactory.getLogger(LimitAdapter.class);
 
-	LimitAdapter(LimitClient limitClient) {
+	private final LimitClient limitClient;
+	private final PaymentMetrics paymentMetrics;
+
+	LimitAdapter(LimitClient limitClient, PaymentMetrics paymentMetrics) {
 		this.limitClient = limitClient;
+		this.paymentMetrics = paymentMetrics;
 	}
 
 	// ponytail: Feign default timeouts, no retries; Episode 16 adds them
@@ -29,6 +36,8 @@ public class LimitAdapter implements PaymentLimitPort {
 					payment.amount().amount(), payment.amount().currency().name())).result();
 		}
 		catch (FeignException e) {
+			log.warn("Limit system unavailable (status {})", e.status());
+			paymentMetrics.paymentSystemError("limit");
 			throw new ExternalSystemUnavailableException("Limit system", e);
 		}
 		return switch (result) {

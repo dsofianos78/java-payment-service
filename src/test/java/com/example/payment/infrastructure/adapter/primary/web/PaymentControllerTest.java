@@ -28,10 +28,18 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -368,6 +376,38 @@ class PaymentControllerTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.status").value(400))
 				.andExpect(jsonPath("$.title").value("Bad Request"));
+	}
+
+	@Test
+	void correlationIdIsReturnedAndPassedToTheAccountSystem() throws Exception {
+		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString())
+						.header("X-Correlation-Id", "corr-episode-15").contentType(MediaType.APPLICATION_JSON)
+						.content(paymentWithReference("Correlated")))
+				.andExpect(status().isCreated())
+				.andExpect(header().string("X-Correlation-Id", "corr-episode-15"));
+
+		externalSystems.verify(getRequestedFor(urlEqualTo("/accounts/ACC-10001"))
+				.withHeader("X-Correlation-Id", equalTo("corr-episode-15")));
+	}
+
+	@Test
+	void malformedCorrelationIdIsReplaced() throws Exception {
+		mockMvc.perform(get("/payments/" + UUID.randomUUID()).header("X-Correlation-Id", "<script>"))
+				.andExpect(header().string("X-Correlation-Id", matchesPattern("[0-9a-f-]{36}")));
+	}
+
+	@Test
+	void prometheusSeesPaymentMetrics() throws Exception {
+		mockMvc.perform(post("/payments/" + createPayment("Metrics") + "/execute")).andExpect(status().isOk());
+
+		mockMvc.perform(get("/actuator/prometheus"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(allOf(
+						containsString("payments_total{status=\"created\"}"),
+						containsString("payments_total{status=\"authorized\"}"),
+						containsString("payments_total{status=\"processing\"}"),
+						containsString("payments_total{status=\"completed\"}"),
+						containsString("payment_execution_duration_seconds_count"))));
 	}
 
 	private String createPayment(String reference) throws Exception {
