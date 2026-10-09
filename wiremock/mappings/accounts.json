@@ -3,32 +3,32 @@
     {
       "request": { "method": "GET", "url": "/accounts/ACC-10001" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
-        "jsonBody": { "accountNumber": "ACC-10001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "OPEN" } }
+        "jsonBody": { "accountNumber": "ACC-10001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "OPEN", "holderId": "CUST-1001" } }
     },
     {
       "request": { "method": "GET", "url": "/accounts/ACC-20001" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
-        "jsonBody": { "accountNumber": "ACC-20001", "accountName": "Fictional Savings Account", "currency": "EUR", "state": "OPEN" } }
+        "jsonBody": { "accountNumber": "ACC-20001", "accountName": "Fictional Savings Account", "currency": "EUR", "state": "OPEN", "holderId": "CUST-1001" } }
     },
     {
       "request": { "method": "GET", "url": "/accounts/ACC-30001" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
-        "jsonBody": { "accountNumber": "ACC-30001", "accountName": "Fictional Current Account", "currency": "GBP", "state": "OPEN" } }
+        "jsonBody": { "accountNumber": "ACC-30001", "accountName": "Fictional Current Account", "currency": "GBP", "state": "OPEN", "holderId": "CUST-2002" } }
     },
     {
       "request": { "method": "GET", "url": "/accounts/ACC-70001" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
-        "jsonBody": { "accountNumber": "ACC-70001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "OPEN" } }
+        "jsonBody": { "accountNumber": "ACC-70001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "OPEN", "holderId": "CUST-1001" } }
     },
     {
       "request": { "method": "GET", "url": "/accounts/ACC-80001" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
-        "jsonBody": { "accountNumber": "ACC-80001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "FROZEN" } }
+        "jsonBody": { "accountNumber": "ACC-80001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "FROZEN", "holderId": "CUST-1001" } }
     },
     {
       "request": { "method": "GET", "url": "/accounts/ACC-90001" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
-        "jsonBody": { "accountNumber": "ACC-90001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "CLOSED" } }
+        "jsonBody": { "accountNumber": "ACC-90001", "accountName": "Fictional Current Account", "currency": "EUR", "state": "CLOSED", "holderId": "CUST-1001" } }
     }
   ]
 }

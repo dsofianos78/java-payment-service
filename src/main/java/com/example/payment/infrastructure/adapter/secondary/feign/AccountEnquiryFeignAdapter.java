@@ -43,7 +43,7 @@ public class AccountEnquiryFeignAdapter implements AccountEnquiryPort {
 	// A read: asking again can't change anything, so a failed attempt is retried (application.properties).
 	// Each attempt counts towards the circuit breaker; once it is open, nothing is retried or sent.
 	@Override
-	public Optional<AccountStatus> findStatus(AccountId accountId) {
+	public Optional<Account> findAccount(AccountId accountId) {
 		AccountResponse account;
 		try {
 			account = retry.executeSupplier(() -> circuitBreaker.executeSupplier(
@@ -63,7 +63,7 @@ public class AccountEnquiryFeignAdapter implements AccountEnquiryPort {
 			log.warn("Account system circuit breaker is open, not called");
 			throw new AccountUnavailableException(e);
 		}
-		return Optional.of(toAccountStatus(account.state()));
+		return Optional.of(new Account(toAccountStatus(account.state()), account.holderId()));
 	}
 
 	private static AccountStatus toAccountStatus(String state) {

@@ -4,8 +4,11 @@ import com.example.payment.application.exception.ExternalSystemUnavailableExcept
 import com.example.payment.application.exception.InvalidPaymentStateException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.port.secondary.AccountEnquiryPort.Account;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
+import com.example.payment.application.validation.AccountStateValidator;
+import com.example.payment.domain.valueobject.AccountStatus;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
@@ -48,7 +51,11 @@ class RequestPaymentExecutionServiceTest {
 		}
 	};
 
-	private final RequestPaymentExecutionService service = new RequestPaymentExecutionService(repository, queued::add);
+	// CUST-1 holds ACC-1, the payment's source.
+	private final AccountStateValidator validator = new AccountStateValidator(accountId ->
+			Optional.of(new Account(AccountStatus.ACTIVE, "CUST-1")).filter(account -> accountId.value().equals("ACC-1")));
+
+	private final RequestPaymentExecutionService service = new RequestPaymentExecutionService(repository, validator, queued::add);
 
 	@Test
 	void queuesACreatedPaymentAndReturnsItUnchanged() {
@@ -96,6 +103,14 @@ class RequestPaymentExecutionServiceTest {
 		assertThat(queued).isEmpty();
 	}
 
+	// Checked here, while there is a caller: the consumer that executes the message has none.
+	@Test
+	void anotherCustomersPaymentIsNotFoundAndNothingIsQueued() {
+		assertThatExceptionOfType(PaymentNotFoundException.class)
+				.isThrownBy(() -> service.requestExecution(new ExecutePaymentCommand(stored.id().toString(), "CUST-2")));
+		assertThat(queued).isEmpty();
+	}
+
 	@Test
 	void malformedIdIsAValidationError() {
 		assertThatExceptionOfType(PaymentValidationException.class)
@@ -104,7 +119,7 @@ class RequestPaymentExecutionServiceTest {
 
 	@Test
 	void brokerDownReachesTheCaller() {
-		RequestPaymentExecutionService brokerDown = new RequestPaymentExecutionService(repository, id -> {
+		RequestPaymentExecutionService brokerDown = new RequestPaymentExecutionService(repository, validator, id -> {
 			throw new ExternalSystemUnavailableException("Message broker", new RuntimeException("timeout"));
 		});
 
@@ -113,6 +128,6 @@ class RequestPaymentExecutionServiceTest {
 	}
 
 	private static ExecutePaymentCommand command(String paymentId) {
-		return new ExecutePaymentCommand(paymentId);
+		return new ExecutePaymentCommand(paymentId, "CUST-1");
 	}
 }

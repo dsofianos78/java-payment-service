@@ -178,14 +178,14 @@ class ExecutePaymentServiceTest {
 		UUID unknown = UUID.randomUUID();
 
 		assertThatExceptionOfType(PaymentNotFoundException.class)
-				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(new ExecutePaymentCommand(unknown.toString())));
+				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(new ExecutePaymentCommand(unknown.toString(), null)));
 		assertThat(statusWhenSent).isEmpty();
 	}
 
 	@Test
 	void rejectsAMalformedPaymentId() {
 		assertThatExceptionOfType(PaymentValidationException.class)
-				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(new ExecutePaymentCommand("not-a-uuid")))
+				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(new ExecutePaymentCommand("not-a-uuid", null)))
 				.withMessage("Invalid payment id: not-a-uuid");
 	}
 
@@ -202,6 +202,6 @@ class ExecutePaymentServiceTest {
 	}
 
 	private static ExecutePaymentCommand command(PaymentId id) {
-		return new ExecutePaymentCommand(id.toString());
+		return new ExecutePaymentCommand(id.toString(), null); // as the consumer sends it: no caller
 	}
 }

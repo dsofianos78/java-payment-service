@@ -12,6 +12,9 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # Accepts tokens signed with the local key (application-local.properties). A real deployment sets
+      # SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI instead.
+      SPRING_PROFILES_ACTIVE: local
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payments
       SPRING_DATASOURCE_USERNAME: payments
       SPRING_DATASOURCE_PASSWORD: payments

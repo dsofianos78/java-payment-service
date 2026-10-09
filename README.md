@@ -27,6 +27,9 @@ Each episode is a git tag. Check one out to see the code exactly as that episode
 git checkout episode-01-working-payment
 ```
 
+Episode 20 is the finale. The bonus episodes after it close the gaps a reviewer of a payment service asks about
+first, and build on it in order.
+
 | # | Episode | Tag |
 |---|---|---|
 | 01 | [Create a Working Payment](docs/episodes/01-working-payment.md) | `episode-01-working-payment` |
@@ -49,6 +52,8 @@ git checkout episode-01-working-payment
 | 18 | [Testing Strategy](docs/episodes/18-testing-strategy.md) | `episode-18-testing-strategy` |
 | 19 | [Production-Style Local Environment](docs/episodes/19-local-environment.md) | `episode-19-local-environment` |
 | 20 | [Final Architecture Review](docs/episodes/20-final-review.md) | `episode-20-final-review` |
+| | **Bonus episodes** | |
+| B1 | [Security](docs/episodes/bonus-01-security.md) | `bonus-01-security` |
 
 ## License
 

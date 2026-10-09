@@ -2,9 +2,12 @@ package com.example.payment.application.service.query;
 
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.port.secondary.AccountEnquiryPort.Account;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.query.GetPaymentQuery;
 import com.example.payment.application.usecase.query.GetPaymentResult;
+import com.example.payment.application.validation.AccountStateValidator;
+import com.example.payment.domain.valueobject.AccountStatus;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
@@ -42,11 +45,12 @@ class GetPaymentServiceTest {
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return Optional.of(stored).filter(p -> p.id().equals(paymentId));
 		}
-	});
+	}, new AccountStateValidator(accountId -> Optional.of(new Account(AccountStatus.ACTIVE, "CUST-1"))
+			.filter(account -> accountId.value().equals("ACC-1")))); // CUST-1 holds ACC-1, the payment's source
 
 	@Test
 	void returnsTheStoredPaymentAsAResult() {
-		GetPaymentResult result = service.getPayment(new GetPaymentQuery(stored.id().toString()));
+		GetPaymentResult result = service.getPayment(new GetPaymentQuery(stored.id().toString(), "CUST-1"));
 
 		assertThat(result).isEqualTo(new GetPaymentResult(stored.id().toString(), "ACC-1", "ACC-2",
 				new BigDecimal("250.00"), "EUR", "Invoice 12345", "CREATED"));
@@ -57,14 +61,22 @@ class GetPaymentServiceTest {
 		UUID unknown = UUID.randomUUID();
 
 		assertThatExceptionOfType(PaymentNotFoundException.class)
-				.isThrownBy(() -> service.getPayment(new GetPaymentQuery(unknown.toString())))
+				.isThrownBy(() -> service.getPayment(new GetPaymentQuery(unknown.toString(), "CUST-1")))
 				.withMessage("Payment " + unknown + " does not exist");
+	}
+
+	// The same answer as for a payment that doesn't exist: another customer can't tell the difference.
+	@Test
+	void anotherCustomersPaymentIsNotFound() {
+		assertThatExceptionOfType(PaymentNotFoundException.class)
+				.isThrownBy(() -> service.getPayment(new GetPaymentQuery(stored.id().toString(), "CUST-2")))
+				.withMessage("Payment " + stored.id() + " does not exist");
 	}
 
 	@Test
 	void rejectsAMalformedPaymentId() {
 		assertThatExceptionOfType(PaymentValidationException.class)
-				.isThrownBy(() -> service.getPayment(new GetPaymentQuery("not-a-uuid")))
+				.isThrownBy(() -> service.getPayment(new GetPaymentQuery("not-a-uuid", "CUST-1")))
 				.withMessage("Invalid payment id: not-a-uuid");
 	}
 }

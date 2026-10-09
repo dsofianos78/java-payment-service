@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -48,6 +49,7 @@ import static org.mockito.Mockito.doThrow;
  * and what it can't.
  */
 @SpringBootTest
+@ActiveProfiles("local")
 @Import(TestcontainersConfiguration.class)
 class PaymentTransactionsTest {
 
@@ -157,11 +159,11 @@ class PaymentTransactionsTest {
 
 	private Payment create(String idempotencyKey) {
 		return createPayment.createPayment(new CreatePaymentCommand("ACC-10001", "ACC-20001",
-				new BigDecimal("250.00"), "EUR", "Invoice 13013", idempotencyKey));
+				new BigDecimal("250.00"), "EUR", "Invoice 13013", idempotencyKey, "CUST-1001"));
 	}
 
 	private static ExecutePaymentCommand execute(Payment payment) {
-		return new ExecutePaymentCommand(payment.id().toString());
+		return new ExecutePaymentCommand(payment.id().toString(), null);
 	}
 
 	private String storedStatus(Payment payment) {

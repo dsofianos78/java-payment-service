@@ -1,5 +1,6 @@
 package com.example.payment.infrastructure.adapter.primary.web;
 
+import com.example.payment.application.exception.AccessDeniedException;
 import com.example.payment.application.exception.AccountNotFoundException;
 import com.example.payment.application.exception.AccountUnavailableException;
 import com.example.payment.application.exception.ExternalSystemUnavailableException;
@@ -28,6 +29,13 @@ class PaymentExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
 	}
 
+	// Only for creating from an account the caller doesn't hold. Another customer's payment is a 404
+	// (PaymentNotFoundException), so the API doesn't reveal which payment IDs exist.
+	@ExceptionHandler(AccessDeniedException.class)
+	ProblemDetail forbidden(AccessDeniedException e) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, e.getMessage());
+	}
+
 	@ExceptionHandler(PaymentNotFoundException.class)
 	ProblemDetail notFound(PaymentNotFoundException e) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
@@ -42,7 +50,8 @@ class PaymentExceptionHandler {
 
 	// Well-formed, but the key belongs to another request; retrying the same thing can never succeed.
 	// Same for a payment the authorization or limit system refused: valid, just not allowed.
-	// (Not 403: that would say the caller lacks permission, not that the payment was declined.)
+	// (Not 403: that would say the caller lacks permission, not that the payment was declined. 403 is access
+	// control, AccessDeniedException.)
 	@ExceptionHandler({IdempotencyKeyMismatchException.class, PaymentAuthorizationException.class,
 			PaymentLimitExceededException.class})
 	ProblemDetail unprocessable(RuntimeException e) {

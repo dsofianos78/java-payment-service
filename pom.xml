@@ -87,6 +87,10 @@
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
@@ -144,6 +148,12 @@
 			<version>${archunit.version}</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- Brings spring-security-test: jwt() stands in for a signed token in MockMvc tests. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-resource-server-test</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -151,6 +161,10 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<!-- ./mvnw spring-boot:run accepts tokens signed with the local key (application-local.properties). -->
+				<configuration>
+					<profiles>local</profiles>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

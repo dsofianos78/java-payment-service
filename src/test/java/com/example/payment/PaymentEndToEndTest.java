@@ -5,19 +5,28 @@ import com.example.payment.infrastructure.adapter.primary.messaging.PaymentProce
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,6 +50,7 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -52,8 +62,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * The whole service, from HTTP to the database, Kafka and the external systems:
  * real PostgreSQL and Kafka (Testcontainers), WireMock for the account,
  * authorization, limit and payment systems. Only the HTTP server is simulated (MockMvc).
+ *
+ * Every request carries a token for customer CUST-1001, who holds ACC-10001
+ * (wiremock/mappings/accounts.json). jwt() stands in for a signed token; two
+ * tests sign real ones with the local key.
  */
 @SpringBootTest
+@ActiveProfiles("local")
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class PaymentEndToEndTest {
@@ -83,6 +98,83 @@ class PaymentEndToEndTest {
 	@Autowired
 	KafkaTemplate<String, PaymentProcessingMessage> kafkaTemplate;
 
+	@Value("${payment.security.local-jwt-secret}")
+	String localJwtSecret;
+
+	@Test
+	void noTokenIs401() throws Exception {
+		mockMvc.perform(get("/payments/{id}", UUID.randomUUID()))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string("WWW-Authenticate", containsString("Bearer")));
+		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString())
+						.contentType(MediaType.APPLICATION_JSON).content(paymentWithReference("No token")))
+				.andExpect(status().isUnauthorized());
+
+		assertThat(paymentsWithReference("No token")).isZero();
+	}
+
+	@Test
+	void aTokenSignedWithTheLocalKeyIsAccepted() throws Exception {
+		String paymentId = createPayment("Signed token");
+
+		mockMvc.perform(get("/payments/{id}", paymentId).header("Authorization", "Bearer " + signedToken(localJwtSecret)))
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void aTokenSignedWithAnotherKeyIs401() throws Exception {
+		String forged = signedToken("someone-elses-key-that-is-also-long-enough-0001");
+
+		mockMvc.perform(get("/payments/{id}", UUID.randomUUID()).header("Authorization", "Bearer " + forged))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void healthMetricsAndDocumentationNeedNoToken() throws Exception {
+		mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+		mockMvc.perform(get("/actuator/prometheus")).andExpect(status().isOk());
+		mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk());
+		mockMvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
+	}
+
+	// ACC-30001 belongs to CUST-2002. Paying *to* it is fine (createdPaymentCanBeReadBack); paying from it is not.
+	@Test
+	void creatingFromAnAccountTheCallerDoesNotHoldIs403() throws Exception {
+		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString())
+						.contentType(MediaType.APPLICATION_JSON).content("""
+								{
+								  "sourceAccountId": "ACC-30001",
+								  "destinationAccountId": "ACC-20001",
+								  "amount": 250.00,
+								  "currency": "GBP",
+								  "reference": "Not my account"
+								}
+								""").with(customer()))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.detail").value("Source account ACC-30001 is not held by the caller"));
+
+		assertThat(paymentsWithReference("Not my account")).isZero();
+	}
+
+	// The same answer as for a payment that doesn't exist, so CUST-2002 can't tell whether this ID is in use.
+	@Test
+	void anotherCustomersPaymentIs404AndIsNotTouched() throws Exception {
+		String paymentId = createPayment("Someone else's payment");
+		String notFound = "Payment " + paymentId + " does not exist";
+
+		mockMvc.perform(get("/payments/{id}", paymentId).with(otherCustomer()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").value(notFound));
+		mockMvc.perform(post("/payments/{id}/execute", paymentId).with(otherCustomer()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").value(notFound));
+		mockMvc.perform(post("/payments/{id}/cancel", paymentId).with(otherCustomer()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").value(notFound));
+
+		await().during(Duration.ofMillis(500)).untilAsserted(() -> assertThat(storedStatus(paymentId)).isEqualTo("CREATED"));
+	}
+
 	@Test
 	void createsAndStoresPayment() throws Exception {
 		String response = mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON).content("""
@@ -93,7 +185,7 @@ class PaymentEndToEndTest {
 						  "currency": "EUR",
 						  "reference": "Invoice 12345"
 						}
-						"""))
+						""").with(customer()))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.paymentId").isNotEmpty())
 				.andExpect(jsonPath("$.status").value("CREATED"))
@@ -116,12 +208,12 @@ class PaymentEndToEndTest {
 						  "currency": "GBP",
 						  "reference": "Rent October"
 						}
-						"""))
+						""").with(customer()))
 				.andExpect(status().isCreated())
 				.andReturn().getResponse().getContentAsString();
 		String paymentId = JsonPath.read(response, "$.paymentId");
 
-		mockMvc.perform(get("/payments/{id}", paymentId))
+		mockMvc.perform(get("/payments/{id}", paymentId).with(customer()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.paymentId").value(paymentId))
 				.andExpect(jsonPath("$.sourceAccountId").value("ACC-10001"))
@@ -146,14 +238,14 @@ class PaymentEndToEndTest {
 	void unknownPaymentIs404() throws Exception {
 		UUID unknown = UUID.randomUUID();
 
-		mockMvc.perform(get("/payments/{id}", unknown))
+		mockMvc.perform(get("/payments/{id}", unknown).with(customer()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.detail").value("Payment " + unknown + " does not exist"));
 	}
 
 	@Test
 	void malformedPaymentIdIs400() throws Exception {
-		mockMvc.perform(get("/payments/not-a-uuid"))
+		mockMvc.perform(get("/payments/not-a-uuid").with(customer()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.detail").value("Invalid payment id: not-a-uuid"));
 	}
@@ -168,7 +260,7 @@ class PaymentEndToEndTest {
 						  "currency": "JPY",
 						  "reference": "Invoice 12345"
 						}
-						"""))
+						""").with(customer()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.detail").value("Unsupported currency: JPY"));
 	}
@@ -183,7 +275,7 @@ class PaymentEndToEndTest {
 						  "currency": "EUR",
 						  "reference": "Invoice 12345"
 						}
-						"""))
+						""").with(customer()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.detail").value("Destination account ACC-90001 is not active"));
 	}
@@ -198,7 +290,7 @@ class PaymentEndToEndTest {
 						  "currency": "EUR",
 						  "reference": "Invoice 12345"
 						}
-						"""))
+						""").with(customer()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.detail").value("Source account ACC-99999 does not exist"));
 	}
@@ -208,12 +300,12 @@ class PaymentEndToEndTest {
 	void executesAPaymentToCompletedAndStoresIt() throws Exception {
 		String paymentId = createPayment("Invoice 12345");
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+		mockMvc.perform(post("/payments/{id}/execute", paymentId).with(customer()))
 				.andExpect(status().isAccepted())
 				.andExpect(jsonPath("$.status").value("CREATED"));
 
 		awaitStatus(paymentId, "COMPLETED");
-		mockMvc.perform(get("/payments/{id}", paymentId))
+		mockMvc.perform(get("/payments/{id}", paymentId).with(customer()))
 				.andExpect(jsonPath("$.status").value("COMPLETED"));
 	}
 
@@ -237,7 +329,7 @@ class PaymentEndToEndTest {
 					.withHeader("Idempotency-Key", equalTo(paymentId)));
 			assertThat(storedStatus(paymentId)).isEqualTo("PROCESSING");
 		});
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+		mockMvc.perform(post("/payments/{id}/execute", paymentId).with(customer()))
 				.andExpect(status().isConflict());
 	}
 
@@ -263,7 +355,7 @@ class PaymentEndToEndTest {
 	void correlationIdFollowsThePaymentThroughKafka() throws Exception {
 		String paymentId = createPayment("Correlated execution");
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId).header("X-Correlation-Id", "corr-episode-17"))
+		mockMvc.perform(post("/payments/{id}/execute", paymentId).header("X-Correlation-Id", "corr-episode-17").with(customer()))
 				.andExpect(status().isAccepted());
 
 		await().untilAsserted(() -> externalSystems.verify(postRequestedFor(urlEqualTo("/payment-orders"))
@@ -277,7 +369,7 @@ class PaymentEndToEndTest {
 		execute(paymentId);
 		awaitStatus(paymentId, "COMPLETED");
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+		mockMvc.perform(post("/payments/{id}/execute", paymentId).with(customer()))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is COMPLETED and cannot become PROCESSING"));
 	}
@@ -319,7 +411,7 @@ class PaymentEndToEndTest {
 
 	@Test
 	void executingAnUnknownPaymentIs404() throws Exception {
-		mockMvc.perform(post("/payments/{id}/execute", UUID.randomUUID()))
+		mockMvc.perform(post("/payments/{id}/execute", UUID.randomUUID()).with(customer()))
 				.andExpect(status().isNotFound());
 	}
 
@@ -327,11 +419,11 @@ class PaymentEndToEndTest {
 	void cancelsACreatedPaymentAndStoresIt() throws Exception {
 		String paymentId = createPayment("Invoice 12345");
 
-		mockMvc.perform(post("/payments/{id}/cancel", paymentId))
+		mockMvc.perform(post("/payments/{id}/cancel", paymentId).with(customer()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("CANCELLED"));
 
-		mockMvc.perform(get("/payments/{id}", paymentId))
+		mockMvc.perform(get("/payments/{id}", paymentId).with(customer()))
 				.andExpect(jsonPath("$.status").value("CANCELLED"));
 	}
 
@@ -341,26 +433,26 @@ class PaymentEndToEndTest {
 		execute(paymentId);
 		awaitStatus(paymentId, "COMPLETED");
 
-		mockMvc.perform(post("/payments/{id}/cancel", paymentId))
+		mockMvc.perform(post("/payments/{id}/cancel", paymentId).with(customer()))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is COMPLETED and cannot become CANCELLED"));
-		mockMvc.perform(get("/payments/{id}", paymentId))
+		mockMvc.perform(get("/payments/{id}", paymentId).with(customer()))
 				.andExpect(jsonPath("$.status").value("COMPLETED"));
 	}
 
 	@Test
 	void cancelledPaymentCannotBeExecuted() throws Exception {
 		String paymentId = createPayment("Invoice 12345");
-		mockMvc.perform(post("/payments/{id}/cancel", paymentId)).andExpect(status().isOk());
+		mockMvc.perform(post("/payments/{id}/cancel", paymentId).with(customer())).andExpect(status().isOk());
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+		mockMvc.perform(post("/payments/{id}/execute", paymentId).with(customer()))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is CANCELLED and cannot become PROCESSING"));
 	}
 
 	@Test
 	void cancellingAnUnknownPaymentIs404() throws Exception {
-		mockMvc.perform(post("/payments/{id}/cancel", UUID.randomUUID()))
+		mockMvc.perform(post("/payments/{id}/cancel", UUID.randomUUID()).with(customer()))
 				.andExpect(status().isNotFound());
 	}
 
@@ -415,7 +507,7 @@ class PaymentEndToEndTest {
 
 	private ResultActions createWithKey(String key, String body) throws Exception {
 		return mockMvc.perform(post("/payments").header("Idempotency-Key", key)
-				.contentType(MediaType.APPLICATION_JSON).content(body));
+				.contentType(MediaType.APPLICATION_JSON).content(body).with(customer()));
 	}
 
 	private int paymentsWithReference(String reference) {
@@ -438,7 +530,7 @@ class PaymentEndToEndTest {
 	@Test
 	void missingIdempotencyKeyIs400AndCreatesNothing() throws Exception {
 		mockMvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON)
-						.content(paymentWithReference("No idempotency key")))
+						.content(paymentWithReference("No idempotency key")).with(customer()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.detail").value("Required header 'Idempotency-Key' is not present."));
 
@@ -447,7 +539,7 @@ class PaymentEndToEndTest {
 
 	@Test
 	void rejectsMissingFieldsWith400() throws Exception {
-		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON).content("{}"))
+		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON).content("{}").with(customer()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.status").value(400))
 				.andExpect(jsonPath("$.title").value("Bad Request"));
@@ -457,7 +549,7 @@ class PaymentEndToEndTest {
 	void correlationIdIsReturnedAndPassedToTheAccountSystem() throws Exception {
 		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString())
 						.header("X-Correlation-Id", "corr-episode-15").contentType(MediaType.APPLICATION_JSON)
-						.content(paymentWithReference("Correlated")))
+						.content(paymentWithReference("Correlated")).with(customer()))
 				.andExpect(status().isCreated())
 				.andExpect(header().string("X-Correlation-Id", "corr-episode-15"));
 
@@ -467,7 +559,7 @@ class PaymentEndToEndTest {
 
 	@Test
 	void malformedCorrelationIdIsReplaced() throws Exception {
-		mockMvc.perform(get("/payments/" + UUID.randomUUID()).header("X-Correlation-Id", "<script>"))
+		mockMvc.perform(get("/payments/" + UUID.randomUUID()).header("X-Correlation-Id", "<script>").with(customer()))
 				.andExpect(header().string("X-Correlation-Id", matchesPattern("[0-9a-f-]{36}")));
 	}
 
@@ -488,8 +580,24 @@ class PaymentEndToEndTest {
 						containsString("resilience4j_circuitbreaker_state{name=\"payment-system\",state=\"closed\"} 1.0"))));
 	}
 
+	private static RequestPostProcessor customer() {
+		return jwt().jwt(token -> token.subject("CUST-1001"));
+	}
+
+	private static RequestPostProcessor otherCustomer() {
+		return jwt().jwt(token -> token.subject("CUST-2002"));
+	}
+
+	// What an identity provider would issue, signed with the given key. No expiry: a test token.
+	private static String signedToken(String key) throws Exception {
+		SignedJWT token = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256),
+				new JWTClaimsSet.Builder().subject("CUST-1001").build());
+		token.sign(new MACSigner(key.getBytes(StandardCharsets.UTF_8)));
+		return token.serialize();
+	}
+
 	private void execute(String paymentId) throws Exception {
-		mockMvc.perform(post("/payments/{id}/execute", paymentId)).andExpect(status().isAccepted());
+		mockMvc.perform(post("/payments/{id}/execute", paymentId).with(customer())).andExpect(status().isAccepted());
 	}
 
 	private void awaitStatus(String paymentId, String expected) {
@@ -513,7 +621,7 @@ class PaymentEndToEndTest {
 						  "currency": "EUR",
 						  "reference": "%s"
 						}
-						""".formatted(destinationAccountId, amount, reference)))
+						""".formatted(destinationAccountId, amount, reference)).with(customer()))
 				.andExpect(status().isCreated())
 				.andReturn().getResponse().getContentAsString();
 		return JsonPath.read(response, "$.paymentId");

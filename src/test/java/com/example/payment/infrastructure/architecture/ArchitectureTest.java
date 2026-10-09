@@ -42,6 +42,12 @@ class ArchitectureTest {
 			.that().resideInAPackage(DOMAIN)
 			.should().dependOnClassesThat().resideInAnyPackage("org.springframework..", "jakarta.persistence..", "feign..");
 
+	// Authentication stays in the web adapter and config. The application gets the caller as a plain customer ID.
+	@ArchTest
+	static final ArchRule coreDoesNotDependOnSpringSecurity = noClasses()
+			.that().resideInAnyPackage(DOMAIN, "com.example.payment.application..")
+			.should().dependOnClassesThat().resideInAPackage("org.springframework.security..");
+
 	@ArchTest
 	static final ArchRule domainDoesNotUsePersistenceEntities = noClasses()
 			.that().resideInAPackage(DOMAIN)

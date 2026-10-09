@@ -31,7 +31,9 @@ class PaymentProcessingConsumer {
 	@KafkaListener(topics = PaymentProcessingMessage.TOPIC)
 	void onMessage(PaymentProcessingMessage message) {
 		try {
-			executePaymentUseCase.executePayment(new ExecutePaymentCommand(message.paymentId()));
+			// No caller, so no customer ID: access was checked when the execution was requested
+			// (RequestPaymentExecutionService), and only that service publishes to this internal topic.
+			executePaymentUseCase.executePayment(new ExecutePaymentCommand(message.paymentId(), null));
 		}
 		// Answers, not failures: redelivering would get the same answer. A duplicate message ends here too: the
 		// payment has already moved past AUTHORIZED, so the domain refuses to process it again and nothing is

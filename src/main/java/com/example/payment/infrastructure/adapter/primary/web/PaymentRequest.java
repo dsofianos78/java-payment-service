@@ -17,8 +17,8 @@ public record PaymentRequest(
 		@NotBlank String currency,
 		@NotBlank String reference) {
 
-	CreatePaymentCommand toCommand(String idempotencyKey) {
+	CreatePaymentCommand toCommand(String idempotencyKey, String customerId) {
 		return new CreatePaymentCommand(sourceAccountId, destinationAccountId, amount, currency, reference,
-				idempotencyKey);
+				idempotencyKey, customerId);
 	}
 }

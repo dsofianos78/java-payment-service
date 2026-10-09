@@ -18,6 +18,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.security.Principal;
+
+/**
+ * Every endpoint here needs a valid token (config/SecurityConfiguration). The
+ * caller's customer ID comes from the token, as {@link Principal#getName()}, the
+ * token's {@code sub}, and goes to the application as plain data on the command
+ * or query. The request body never carries it: a client could put anyone's there.
+ */
 @RestController
 @RequestMapping("/payments")
 public class PaymentController {
@@ -41,26 +49,27 @@ public class PaymentController {
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public PaymentResponse create(@Valid @RequestBody PaymentRequest request,
-			@RequestHeader("Idempotency-Key") String idempotencyKey) {
-		return PaymentResponse.from(createPaymentUseCase.createPayment(request.toCommand(idempotencyKey)));
+			@RequestHeader("Idempotency-Key") String idempotencyKey, Principal caller) {
+		return PaymentResponse.from(createPaymentUseCase.createPayment(request.toCommand(idempotencyKey, caller.getName())));
 	}
 
 	@GetMapping("/{paymentId}")
-	public PaymentResponse get(@PathVariable String paymentId) {
-		return PaymentResponse.from(getPaymentUseCase.getPayment(new GetPaymentQuery(paymentId)));
+	public PaymentResponse get(@PathVariable String paymentId, Principal caller) {
+		return PaymentResponse.from(getPaymentUseCase.getPayment(new GetPaymentQuery(paymentId, caller.getName())));
 	}
 
 	// 202: queued, not done. The body shows the payment as it is now (CREATED or AUTHORIZED); the caller follows
 	// it with GET /payments/{id} until it is COMPLETED or FAILED.
 	@PostMapping("/{paymentId}/execute")
 	@ResponseStatus(HttpStatus.ACCEPTED)
-	public PaymentResponse execute(@PathVariable String paymentId) {
-		return PaymentResponse.from(requestPaymentExecutionUseCase.requestExecution(new ExecutePaymentCommand(paymentId)));
+	public PaymentResponse execute(@PathVariable String paymentId, Principal caller) {
+		return PaymentResponse.from(requestPaymentExecutionUseCase.requestExecution(
+				new ExecutePaymentCommand(paymentId, caller.getName())));
 	}
 
 	// No status check here: whether a payment can still be cancelled is the domain's decision (409 if not).
 	@PostMapping("/{paymentId}/cancel")
-	public PaymentResponse cancel(@PathVariable String paymentId) {
-		return PaymentResponse.from(cancelPaymentUseCase.cancelPayment(new CancelPaymentCommand(paymentId)));
+	public PaymentResponse cancel(@PathVariable String paymentId, Principal caller) {
+		return PaymentResponse.from(cancelPaymentUseCase.cancelPayment(new CancelPaymentCommand(paymentId, caller.getName())));
 	}
 }

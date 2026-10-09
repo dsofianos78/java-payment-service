@@ -1,9 +1,11 @@
 package com.example.payment.application.service.command;
 
+import com.example.payment.application.exception.AccessDeniedException;
 import com.example.payment.application.exception.AccountNotFoundException;
 import com.example.payment.application.exception.IdempotencyKeyInProgressException;
 import com.example.payment.application.exception.IdempotencyKeyMismatchException;
 import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.port.secondary.AccountEnquiryPort.Account;
 import com.example.payment.application.port.secondary.IdempotencyPort;
 import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
@@ -35,12 +37,15 @@ import static org.mockito.Mockito.mock;
 
 class CreatePaymentServiceTest {
 
+	private static final String CUSTOMER = "CUST-1";
+
 	// The port has one method, so a map lookup is a complete fake account system.
-	private final Map<String, AccountStatus> accounts = Map.of(
-			"ACC-ACTIVE-1", AccountStatus.ACTIVE,
-			"ACC-ACTIVE-2", AccountStatus.ACTIVE,
-			"ACC-BLOCKED", AccountStatus.BLOCKED,
-			"ACC-CLOSED", AccountStatus.CLOSED);
+	private final Map<String, Account> accounts = Map.of(
+			"ACC-ACTIVE-1", new Account(AccountStatus.ACTIVE, CUSTOMER),
+			"ACC-ACTIVE-2", new Account(AccountStatus.ACTIVE, CUSTOMER),
+			"ACC-BLOCKED", new Account(AccountStatus.BLOCKED, CUSTOMER),
+			"ACC-CLOSED", new Account(AccountStatus.CLOSED, CUSTOMER),
+			"ACC-OTHER", new Account(AccountStatus.ACTIVE, "CUST-2"));
 
 	private final List<AccountId> enquiries = new ArrayList<>();
 
@@ -173,12 +178,48 @@ class CreatePaymentServiceTest {
 		assertThat(saved).containsExactly(winner);
 	}
 
+	// A claim whose payment isn't there: the store is broken, which is a 409, not a 500.
 	@Test
 	void aKeyClaimedButNotYetSavedIsInProgress() {
-		idempotency.claim("key-1", fingerprintOf(command("250.00", "key-other")), PaymentId.newId());
+		service.createPayment(command("250.00", "key-1"));
+		saved.clear();
 
 		assertThatExceptionOfType(IdempotencyKeyInProgressException.class)
 				.isThrownBy(() -> service.createPayment(command("250.00", "key-1")));
+	}
+
+	@Test
+	void rejectsASourceAccountTheCallerDoesNotHold() {
+		assertThatExceptionOfType(AccessDeniedException.class)
+				.isThrownBy(() -> service.createPayment(command("ACC-OTHER", "ACC-ACTIVE-2", "250.00", "EUR")))
+				.withMessage("Source account ACC-OTHER is not held by the caller");
+
+		assertThat(enquiries).containsExactly(new AccountId("ACC-OTHER")); // the destination isn't asked about
+		assertThat(saved).isEmpty();
+		assertThat(claims).isEmpty();
+	}
+
+	// Without the scope, the second customer's request would be a replay of the first's: a 422, or worse,
+	// the first customer's payment in the response.
+	@Test
+	void theSameKeyFromTwoCustomersIsTwoRequests() {
+		Payment mine = service.createPayment(command("250.00", "key-1"));
+		Payment theirs = service.createPayment(new CreatePaymentCommand("ACC-OTHER", "ACC-ACTIVE-2",
+				new BigDecimal("250.00"), "EUR", "Invoice 12345", "key-1", "CUST-2"));
+
+		assertThat(theirs.id()).isNotEqualTo(mine.id());
+		assertThat(saved).containsExactly(mine, theirs);
+	}
+
+	@Test
+	void anotherCustomerCannotReplayMyKey() {
+		Payment mine = service.createPayment(command("250.00", "key-1"));
+
+		// Same key, same body, but from a customer who doesn't hold ACC-ACTIVE-1: not a replay, so it is checked.
+		assertThatExceptionOfType(AccessDeniedException.class)
+				.isThrownBy(() -> service.createPayment(new CreatePaymentCommand("ACC-ACTIVE-1", "ACC-ACTIVE-2",
+						new BigDecimal("250.00"), "EUR", "Invoice 12345", "key-1", "CUST-2")));
+		assertThat(saved).containsExactly(mine);
 	}
 
 	// Only successful requests take the key, so a request that failed validation can be retried once fixed.
@@ -186,7 +227,7 @@ class CreatePaymentServiceTest {
 	void aRejectedRequestDoesNotUseUpTheKey() {
 		assertThatExceptionOfType(AccountNotFoundException.class)
 				.isThrownBy(() -> service.createPayment(new CreatePaymentCommand("ACC-UNKNOWN", "ACC-ACTIVE-2",
-						new BigDecimal("250.00"), "EUR", "Invoice 12345", "key-1")));
+						new BigDecimal("250.00"), "EUR", "Invoice 12345", "key-1", CUSTOMER)));
 
 		assertThat(claims).isEmpty();
 		assertThat(service.createPayment(command("250.00", "key-1")).status()).isEqualTo(PaymentStatus.CREATED);
@@ -206,12 +247,6 @@ class CreatePaymentServiceTest {
 	void rejectsAnOverlongKey() {
 		assertThatExceptionOfType(PaymentValidationException.class)
 				.isThrownBy(() -> service.createPayment(command("250.00", "k".repeat(256))));
-	}
-
-	// The fingerprint is private to the service; the stored claim of a real request is the way to get one.
-	private String fingerprintOf(CreatePaymentCommand command) {
-		service.createPayment(command);
-		return claims.get(command.idempotencyKey()).requestFingerprint();
 	}
 
 	private CreatePaymentService racingService(Payment winner, String key) {
@@ -249,11 +284,11 @@ class CreatePaymentServiceTest {
 
 	private static CreatePaymentCommand command(String amount, String idempotencyKey) {
 		return new CreatePaymentCommand("ACC-ACTIVE-1", "ACC-ACTIVE-2", new BigDecimal(amount), "EUR",
-				"Invoice 12345", idempotencyKey);
+				"Invoice 12345", idempotencyKey, CUSTOMER);
 	}
 
 	private static CreatePaymentCommand command(String source, String destination, String amount, String currency) {
 		return new CreatePaymentCommand(source, destination, new BigDecimal(amount), currency, "Invoice 12345",
-				UUID.randomUUID().toString());
+				UUID.randomUUID().toString(), CUSTOMER);
 	}
 }

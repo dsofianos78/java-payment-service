@@ -6,10 +6,18 @@
 # with the same key returns the payment it created the first time; change the key
 # to create a new one.
 
+#
+# Since Bonus 01 every /payments request needs a bearer token. These are signed with the local key
+# (application-local.properties) and never expire: local use only. CUST-1001 holds ACC-10001 and ACC-20001;
+# CUST-2002 holds ACC-30001 (wiremock/mappings/accounts.json).
+
 @baseUrl = http://localhost:8080
+@token = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJDVVNULTEwMDEifQ.dBtBctssK74kMTXqNo4zPSkk--7cSdouBA4q40hCBb8
+@otherToken = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJDVVNULTIwMDIifQ.ZJZiegB_bFlLacCyV-BTegv-ZFEG4R4JdS0knsWwV60
 
 ### Episode 01 — create payment -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-01-request-1
 Content-Type: application/json
 
@@ -23,6 +31,7 @@ Content-Type: application/json
 
 ### Episode 01 — unsupported currency -> 400
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-01-request-2
 Content-Type: application/json
 
@@ -36,6 +45,7 @@ Content-Type: application/json
 
 ### Episode 01 — same source and destination -> 400
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-01-request-3
 Content-Type: application/json
 
@@ -49,6 +59,7 @@ Content-Type: application/json
 
 ### Episode 01 — non-positive amount -> 400
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-01-request-4
 Content-Type: application/json
 
@@ -62,6 +73,7 @@ Content-Type: application/json
 
 ### Episode 03 — unknown source account -> 400
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-03-request-1
 Content-Type: application/json
 
@@ -75,6 +87,7 @@ Content-Type: application/json
 
 ### Episode 03 — closed destination account -> 400
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-03-request-2
 Content-Type: application/json
 
@@ -88,6 +101,7 @@ Content-Type: application/json
 
 ### Episode 05 — create a payment to read back -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-05-request-1
 Content-Type: application/json
 
@@ -102,15 +116,19 @@ Content-Type: application/json
 ### Episode 05 — read it back -> 200 (paste the paymentId from the response above)
 @paymentId = 00000000-0000-0000-0000-000000000000
 GET {{baseUrl}}/payments/{{paymentId}}
+Authorization: Bearer {{token}}
 
 ### Episode 05 — unknown payment -> 404
 GET {{baseUrl}}/payments/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
 
 ### Episode 05 — malformed payment id -> 400 "Invalid payment id"
 GET {{baseUrl}}/payments/not-a-uuid
+Authorization: Bearer {{token}}
 
 ### Episode 06 — amount exactly at the limit -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-06-request-1
 Content-Type: application/json
 
@@ -124,6 +142,7 @@ Content-Type: application/json
 
 ### Episode 06 — amount over the limit -> 400 "Payment amount must not exceed 10000.00 EUR" (since Episode 12: 201, the limit is checked on execute)
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-06-request-2
 Content-Type: application/json
 
@@ -137,6 +156,7 @@ Content-Type: application/json
 
 ### Episode 07 — frozen account in the external account system -> 400 "is not active"
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-07-request-1
 Content-Type: application/json
 
@@ -153,9 +173,11 @@ GET http://localhost:8089/accounts/ACC-80001
 
 ### Episode 08 — unknown payment -> 404 problem details "Payment ... does not exist"
 GET {{baseUrl}}/payments/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
 
 ### Episode 08 — missing fields -> 400 problem details, same shape as our own errors
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-08-request-1
 Content-Type: application/json
 
@@ -164,6 +186,7 @@ Content-Type: application/json
 ### Episode 08 — account system down -> 503 "Account system is unavailable"
 # First run: docker compose stop account-system   (afterwards: docker compose start account-system)
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-08-request-2
 Content-Type: application/json
 
@@ -177,6 +200,7 @@ Content-Type: application/json
 
 ### Episode 09 — create a payment to execute -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-09-request-1
 Content-Type: application/json
 
@@ -191,12 +215,15 @@ Content-Type: application/json
 ### Episode 09 — execute it -> 200 "COMPLETED" (since Episode 17: 202 "CREATED", then GET shows COMPLETED) (paste the paymentId from the response above)
 @executePaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{executePaymentId}}/execute
+Authorization: Bearer {{token}}
 
 ### Episode 09 — execute it again -> 409 "is COMPLETED and cannot become PROCESSING"
 POST {{baseUrl}}/payments/{{executePaymentId}}/execute
+Authorization: Bearer {{token}}
 
 ### Episode 09 — a payment the stub payment system rejects -> 201, then execute it -> 200 "FAILED" (since Episode 17: 202, then GET shows FAILED)
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-09-request-2
 Content-Type: application/json
 
@@ -210,6 +237,7 @@ Content-Type: application/json
 
 ### Episode 10 — create with an Idempotency-Key -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-10-demo-key-1
 Content-Type: application/json
 
@@ -223,6 +251,7 @@ Content-Type: application/json
 
 ### Episode 10 — same key, same request -> 201 with the same paymentId, no second payment
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-10-demo-key-1
 Content-Type: application/json
 
@@ -236,6 +265,7 @@ Content-Type: application/json
 
 ### Episode 10 — same key, different amount -> 422 "already used for a different request"
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-10-demo-key-1
 Content-Type: application/json
 
@@ -249,6 +279,7 @@ Content-Type: application/json
 
 ### Episode 10 — no Idempotency-Key -> 400 "Required header 'Idempotency-Key' is not present."
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -261,6 +292,7 @@ Content-Type: application/json
 
 ### Episode 11 — create a payment to cancel -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-11-demo-key-1
 Content-Type: application/json
 
@@ -275,15 +307,19 @@ Content-Type: application/json
 ### Episode 11 — cancel it -> 200 "CANCELLED" (paste the paymentId from the response above)
 @cancelPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{cancelPaymentId}}/cancel
+Authorization: Bearer {{token}}
 
 ### Episode 11 — execute the cancelled payment -> 409 "is CANCELLED and cannot become PROCESSING"
 POST {{baseUrl}}/payments/{{cancelPaymentId}}/execute
+Authorization: Bearer {{token}}
 
 ### Episode 11 — cancel the COMPLETED payment from Episode 09 -> 409 "is COMPLETED and cannot become CANCELLED"
 POST {{baseUrl}}/payments/{{executePaymentId}}/cancel
+Authorization: Bearer {{token}}
 
 ### Episode 12 — a payment to an account the authorization system declines -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-12-demo-key-1
 Content-Type: application/json
 
@@ -298,9 +334,11 @@ Content-Type: application/json
 ### Episode 12 — execute it -> 422 "was not authorized", payment stays CREATED (since Episode 17: 202, the decline is only in the log; GET still shows CREATED) (paste the paymentId above)
 @declinedPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{declinedPaymentId}}/execute
+Authorization: Bearer {{token}}
 
 ### Episode 12 — a payment over the source account's limit -> 201 (limits are checked on execute)
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-12-demo-key-2
 Content-Type: application/json
 
@@ -315,9 +353,11 @@ Content-Type: application/json
 ### Episode 12 — execute it -> 422 "exceeds the source account's limit", payment is now AUTHORIZED (since Episode 17: 202, then GET shows AUTHORIZED) (paste the paymentId above)
 @overLimitPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{overLimitPaymentId}}/execute
+Authorization: Bearer {{token}}
 
 ### Episode 13 — create a payment to follow through the audit trail -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-13-demo-key-1
 Content-Type: application/json
 
@@ -332,9 +372,11 @@ Content-Type: application/json
 ### Episode 13 — execute it -> 200 COMPLETED (since Episode 17: 202, then COMPLETED); three rows in payment_audit (see docs/episodes/13) (paste the paymentId above)
 @auditedPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{auditedPaymentId}}/execute
+Authorization: Bearer {{token}}
 
 ### Episode 15 — create with your own correlation ID -> 201, X-Correlation-Id: episode-15-demo in the response and in every log line
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-15-demo-key-1
 X-Correlation-Id: episode-15-demo
 Content-Type: application/json
@@ -352,6 +394,7 @@ GET {{baseUrl}}/actuator/prometheus
 
 ### Episode 16 — create a payment the payment system settles, but answers too late -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-16-demo-key-1
 Content-Type: application/json
 
@@ -366,12 +409,14 @@ Content-Type: application/json
 ### Episode 16 — execute it -> after 5s, 200 with "status": "PROCESSING" (outcome unknown); again -> 409 (since Episode 17: 202 at once; GET shows PROCESSING) (paste the paymentId above)
 @unknownOutcomePaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{unknownOutcomePaymentId}}/execute
+Authorization: Bearer {{token}}
 
 ### Episode 16 — circuit breaker states (after `docker compose stop account-system` and a few creates, account-system is open)
 GET {{baseUrl}}/actuator/prometheus
 
 ### Episode 17 — create a payment to execute asynchronously -> 201
 POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
 Idempotency-Key: episode-17-demo-key-1
 X-Correlation-Id: episode-17-demo
 Content-Type: application/json
@@ -387,14 +432,75 @@ Content-Type: application/json
 ### Episode 17 — execute it -> 202 with "status": "CREATED": queued, not done yet (paste the paymentId above)
 @asyncPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{asyncPaymentId}}/execute
+Authorization: Bearer {{token}}
 X-Correlation-Id: episode-17-demo
 
 ### Episode 17 — follow it -> 200 "COMPLETED" a moment later; the consumer's log lines carry correlationId episode-17-demo
 GET {{baseUrl}}/payments/{{asyncPaymentId}}
+Authorization: Bearer {{token}}
 
 ### Episode 17 — execute it again -> 409 "is COMPLETED and cannot become PROCESSING", nothing is queued
 POST {{baseUrl}}/payments/{{asyncPaymentId}}/execute
+Authorization: Bearer {{token}}
 
 ### Episode 17 — broker down (`docker compose stop kafka`): execute a payment that is still CREATED -> 503 "Message broker is unavailable" after 2s
 @brokerDownPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{brokerDownPaymentId}}/execute
+Authorization: Bearer {{token}}
+
+### Bonus 01 — no token -> 401, WWW-Authenticate: Bearer
+GET {{baseUrl}}/payments/00000000-0000-0000-0000-000000000000
+
+### Bonus 01 — health, metrics and the API docs need no token -> 200
+GET {{baseUrl}}/actuator/health
+
+### Bonus 01 — create as CUST-1001 -> 201
+POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
+Idempotency-Key: bonus-01-demo-key-1
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-30001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice B0101"
+}
+
+### Bonus 01 — read it as CUST-2002 -> 404, the same answer as for a payment that doesn't exist (paste the paymentId above)
+@securedPaymentId = 00000000-0000-0000-0000-000000000000
+GET {{baseUrl}}/payments/{{securedPaymentId}}
+Authorization: Bearer {{otherToken}}
+
+### Bonus 01 — execute or cancel it as CUST-2002 -> 404, nothing changes
+POST {{baseUrl}}/payments/{{securedPaymentId}}/cancel
+Authorization: Bearer {{otherToken}}
+
+### Bonus 01 — CUST-2002 pays from CUST-1001's account -> 403 "is not held by the caller"
+POST {{baseUrl}}/payments
+Authorization: Bearer {{otherToken}}
+Idempotency-Key: bonus-01-demo-key-2
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-30001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice B0102"
+}
+
+### Bonus 01 — CUST-2002 reuses CUST-1001's Idempotency-Key from its own account -> 201, a new payment: keys are per customer
+POST {{baseUrl}}/payments
+Authorization: Bearer {{otherToken}}
+Idempotency-Key: bonus-01-demo-key-1
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-30001",
+  "destinationAccountId": "ACC-10001",
+  "amount": 99.95,
+  "currency": "GBP",
+  "reference": "Invoice B0103"
+}

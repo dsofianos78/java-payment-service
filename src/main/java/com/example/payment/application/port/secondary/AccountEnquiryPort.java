@@ -11,6 +11,10 @@ import java.util.Optional;
  */
 public interface AccountEnquiryPort {
 
-	/** The account's status, or empty if no such account exists. */
-	Optional<AccountStatus> findStatus(AccountId accountId);
+	/** The account's status and holder, or empty if no such account exists. */
+	Optional<Account> findAccount(AccountId accountId);
+
+	/** @param holderId the customer who holds the account, the same ID a caller's token carries */
+	record Account(AccountStatus status, String holderId) {
+	}
 }

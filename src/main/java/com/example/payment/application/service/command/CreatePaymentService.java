@@ -66,20 +66,23 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 
 		// A retry is answered from what was stored, before validation: the account system
 		// isn't asked again, and an account frozen since then can't turn the original 201 into a 400.
-		String key = command.idempotencyKey();
-		if (key == null || key.isBlank() || key.length() > MAX_IDEMPOTENCY_KEY_LENGTH) {
+		String clientKey = command.idempotencyKey();
+		if (clientKey == null || clientKey.isBlank() || clientKey.length() > MAX_IDEMPOTENCY_KEY_LENGTH) {
 			throw new PaymentValidationException(
 					"Idempotency-Key is required and must be 1 to " + MAX_IDEMPOTENCY_KEY_LENGTH + " characters");
 		}
+		// Scoped to the customer: the same key from two customers is two requests. Otherwise one customer could
+		// read another's payment by replaying their key. Hashed, so it fits the column and stores no customer ID.
+		String key = sha256(command.customerId(), clientKey);
 		String fingerprint = fingerprint(payment);
 		Optional<IdempotencyPort.StoredRequest> stored = idempotencyPort.find(key);
 		if (stored.isPresent()) {
 			return replay(stored.get(), fingerprint);
 		}
 
-		// Application validation: both accounts exist and are active. Limits are not checked here: they depend on
+		// Application validation: the caller holds the source account, and both accounts exist and are active. Limits are not checked here: they depend on
 		// what the account has spent by the time the payment is executed (ExecutePaymentService).
-		accountStateValidator.validate(payment.sourceAccountId(), payment.destinationAccountId());
+		accountStateValidator.validate(payment.sourceAccountId(), payment.destinationAccountId(), command.customerId());
 
 		// The claim and the payment commit together: if the save fails, the claim is rolled back and a retry
 		// with the same key starts afresh. Two requests with the same key can both get this far. The claim is
@@ -113,12 +116,16 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 
 	// Built from the value objects, not the raw command, so 250, 250.0 and 250.00 are the same request.
 	private static String fingerprint(Payment payment) {
-		String canonical = String.join("\u001F",
+		return sha256(
 				payment.sourceAccountId().value(),
 				payment.destinationAccountId().value(),
 				payment.amount().amount().toPlainString(),
 				payment.amount().currency().name(),
 				payment.reference().value());
+	}
+
+	private static String sha256(String... parts) {
+		String canonical = String.join("\u001F", parts);
 		try {
 			byte[] hash = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
 			return HexFormat.of().formatHex(hash);

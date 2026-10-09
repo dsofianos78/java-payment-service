@@ -8,6 +8,7 @@ import com.example.payment.application.port.secondary.AuditPort;
 import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.CancelPaymentCommand;
+import com.example.payment.application.validation.AccountStateValidator;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentStatus;
@@ -22,13 +23,15 @@ public class CancelPaymentService implements CancelPaymentUseCase {
 	private static final Logger log = LoggerFactory.getLogger(CancelPaymentService.class);
 
 	private final PaymentRepository paymentRepository;
+	private final AccountStateValidator accountStateValidator;
 	private final AuditPort auditPort;
 	private final PaymentMetricsPort paymentMetricsPort;
 	private final TransactionOperations transactions;
 
-	public CancelPaymentService(PaymentRepository paymentRepository, AuditPort auditPort,
-			PaymentMetricsPort paymentMetricsPort, TransactionOperations transactions) {
+	public CancelPaymentService(PaymentRepository paymentRepository, AccountStateValidator accountStateValidator,
+			AuditPort auditPort, PaymentMetricsPort paymentMetricsPort, TransactionOperations transactions) {
 		this.paymentRepository = paymentRepository;
+		this.accountStateValidator = accountStateValidator;
 		this.auditPort = auditPort;
 		this.paymentMetricsPort = paymentMetricsPort;
 		this.transactions = transactions;
@@ -44,6 +47,8 @@ public class CancelPaymentService implements CancelPaymentUseCase {
 			throw new PaymentValidationException(e.getMessage(), e);
 		}
 		Payment payment = paymentRepository.findById(paymentId)
+				// Another customer's payment is not found, not forbidden: a 403 would confirm that the ID exists.
+				.filter(p -> accountStateValidator.isHeldBy(p.sourceAccountId(), command.customerId()))
 				.orElseThrow(() -> new PaymentNotFoundException(paymentId));
 
 		// The service doesn't check the status itself: Payment knows which states can still be cancelled.
