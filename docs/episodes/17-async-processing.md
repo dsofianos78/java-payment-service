@@ -1,6 +1,6 @@
 # Episode 17 — Asynchronous Processing
 
-Git tag: `episode-17-async-processing` · Previous: [Episode 16 — Resilience](16-resilience.md) · Next: Episode 18 — Testing Strategy
+Git tag: `episode-17-async-processing` · Previous: [Episode 16 — Resilience](16-resilience.md) · Next: [Episode 18 — Testing Strategy](18-testing-strategy.md)
 
 ## Goal
 

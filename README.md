@@ -45,6 +45,7 @@ git checkout episode-01-working-payment
 | 15 | [Observability](docs/episodes/15-observability.md) | `episode-15-observability` |
 | 16 | [Resilience](docs/episodes/16-resilience.md) | `episode-16-resilience` |
 | 17 | [Asynchronous Processing](docs/episodes/17-async-processing.md) | `episode-17-async-processing` |
+| 18 | [Testing Strategy](docs/episodes/18-testing-strategy.md) | `episode-18-testing-strategy` |
 
 ## License
 

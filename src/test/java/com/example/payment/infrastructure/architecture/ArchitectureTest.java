@@ -1,4 +1,4 @@
-package com.example.payment;
+package com.example.payment.infrastructure.architecture;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaCall;

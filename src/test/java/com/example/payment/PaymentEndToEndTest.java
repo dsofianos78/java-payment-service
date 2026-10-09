@@ -1,6 +1,5 @@
-package com.example.payment.infrastructure.adapter.primary.web;
+package com.example.payment;
 
-import com.example.payment.TestcontainersConfiguration;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.example.payment.infrastructure.adapter.primary.messaging.PaymentProcessingMessage;
 import com.jayway.jsonpath.JsonPath;
@@ -49,10 +48,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * The whole service, from HTTP to the database, Kafka and the external systems:
+ * real PostgreSQL and Kafka (Testcontainers), WireMock for the account,
+ * authorization, limit and payment systems. Only the HTTP server is simulated (MockMvc).
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
-class PaymentControllerTest {
+class PaymentEndToEndTest {
 
 	// The same fictional account, authorization, limit and payment systems compose.yaml serves locally.
 	@RegisterExtension
