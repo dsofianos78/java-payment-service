@@ -14,6 +14,7 @@ import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentReference;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -29,12 +30,14 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 	private final AccountStateValidator accountStateValidator;
 	private final PaymentRepository paymentRepository;
 	private final IdempotencyPort idempotencyPort;
+	private final TransactionOperations transactions;
 
 	public CreatePaymentService(AccountStateValidator accountStateValidator, PaymentRepository paymentRepository,
-			IdempotencyPort idempotencyPort) {
+			IdempotencyPort idempotencyPort, TransactionOperations transactions) {
 		this.accountStateValidator = accountStateValidator;
 		this.paymentRepository = paymentRepository;
 		this.idempotencyPort = idempotencyPort;
+		this.transactions = transactions;
 	}
 
 	@Override
@@ -70,14 +73,19 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 		// what the account has spent by the time the payment is executed (ExecutePaymentService).
 		accountStateValidator.validate(payment.sourceAccountId(), payment.destinationAccountId());
 
-		// Two requests with the same key can both get this far. The claim is atomic, so exactly one
-		// wins and saves its payment; the other answers with the winner's.
-		if (!idempotencyPort.claim(key, fingerprint, payment.id())) {
+		// The claim and the payment commit together: if the save fails, the claim is rolled back and a retry
+		// with the same key starts afresh. Two requests with the same key can both get this far. The claim is
+		// atomic, so exactly one wins; the other waits for the winner to commit and answers with its payment.
+		boolean claimed = transactions.execute(tx -> {
+			if (!idempotencyPort.claim(key, fingerprint, payment.id())) {
+				return false;
+			}
+			paymentRepository.save(payment);
+			return true;
+		});
+		if (!claimed) {
 			return replay(idempotencyPort.find(key).orElseThrow(), fingerprint);
 		}
-		// ponytail: if this save fails, the key stays claimed for a payment that doesn't exist and every
-		// retry gets 409; Episode 13 puts the claim and the save in one transaction
-		paymentRepository.save(payment);
 		return payment;
 	}
 
@@ -85,7 +93,8 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 		if (!stored.requestFingerprint().equals(fingerprint)) {
 			throw new IdempotencyKeyMismatchException();
 		}
-		// Claimed but not saved yet: the first request is still running.
+		// Claimed but no payment: can't happen now that both commit together. Kept so a broken store answers
+		// 409 rather than 500.
 		return paymentRepository.findById(stored.paymentId())
 				.orElseThrow(IdempotencyKeyInProgressException::new);
 	}

@@ -1,6 +1,6 @@
 # Episode 12 — Authorization and Limits
 
-Git tag: `episode-12-authorization-limits` · Previous: [Episode 11 — Cancel Payment](11-cancel-payment.md) · Next: Episode 13 — Transactions and Audit
+Git tag: `episode-12-authorization-limits` · Previous: [Episode 11 — Cancel Payment](11-cancel-payment.md) · Next: [Episode 13 — Transactions and Audit](13-transactions-audit.md)
 
 ## Goal
 

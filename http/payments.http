@@ -315,3 +315,20 @@ Content-Type: application/json
 ### Episode 12 — execute it -> 422 "exceeds the source account's limit", payment is now AUTHORIZED (paste the paymentId above)
 @overLimitPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{overLimitPaymentId}}/execute
+
+### Episode 13 — create a payment to follow through the audit trail -> 201
+POST {{baseUrl}}/payments
+Idempotency-Key: episode-13-demo-key-1
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 13013"
+}
+
+### Episode 13 — execute it -> 200 COMPLETED; three rows in payment_audit (see docs/episodes/13) (paste the paymentId above)
+@auditedPaymentId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/payments/{{auditedPaymentId}}/execute

@@ -11,6 +11,7 @@ import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
+import com.example.payment.domain.valueobject.PaymentStatus;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -29,6 +30,11 @@ class GetPaymentServiceTest {
 	private final GetPaymentService service = new GetPaymentService(new PaymentRepository() {
 		@Override
 		public void save(Payment payment) {
+			throw new UnsupportedOperationException("GetPaymentService should not save payments");
+		}
+
+		@Override
+		public boolean updateStatus(Payment payment, PaymentStatus expected) {
 			throw new UnsupportedOperationException("GetPaymentService should not save payments");
 		}
 

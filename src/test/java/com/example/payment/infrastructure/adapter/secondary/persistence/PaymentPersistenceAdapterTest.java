@@ -7,6 +7,7 @@ import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
+import com.example.payment.domain.valueobject.PaymentStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -60,6 +61,22 @@ class PaymentPersistenceAdapterTest {
 		Payment found = adapter.findById(payment.id()).orElseThrow();
 
 		assertThat(found).usingRecursiveComparison().isEqualTo(payment);
+	}
+
+	@Test
+	void updatesTheStatusOnlyFromTheExpectedOne() {
+		Payment payment = Payment.create(new AccountId("ACC-10001"), new AccountId("ACC-20001"),
+				new Money(new BigDecimal("250.00"), Currency.EUR), new PaymentReference("Invoice 12345"));
+		adapter.save(payment);
+		entityManager.flush();
+		payment.authorize();
+
+		assertThat(adapter.updateStatus(payment, PaymentStatus.CREATED)).isTrue();
+		// A second request that also read it as CREATED is too late.
+		assertThat(adapter.updateStatus(payment, PaymentStatus.CREATED)).isFalse();
+
+		entityManager.clear();
+		assertThat(adapter.findById(payment.id()).orElseThrow().status()).isEqualTo(PaymentStatus.AUTHORIZED);
 	}
 
 	@Test

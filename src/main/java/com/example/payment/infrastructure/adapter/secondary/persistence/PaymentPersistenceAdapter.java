@@ -3,6 +3,7 @@ package com.example.payment.infrastructure.adapter.secondary.persistence;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.valueobject.PaymentId;
+import com.example.payment.domain.valueobject.PaymentStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
@@ -24,6 +25,11 @@ public class PaymentPersistenceAdapter implements PaymentRepository {
 	@Override
 	public void save(Payment payment) {
 		jpaRepository.save(PaymentEntityMapper.toEntity(payment));
+	}
+
+	@Override
+	public boolean updateStatus(Payment payment, PaymentStatus expected) {
+		return jpaRepository.updateStatus(payment.id().value(), expected.name(), payment.status().name()) == 1;
 	}
 
 	@Override

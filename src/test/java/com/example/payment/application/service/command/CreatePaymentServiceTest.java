@@ -14,6 +14,7 @@ import com.example.payment.domain.valueobject.AccountStatus;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentStatus;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionOperations;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
@@ -69,10 +70,15 @@ class CreatePaymentServiceTest {
 		}
 
 		@Override
+		public boolean updateStatus(Payment payment, PaymentStatus expected) {
+			throw new AssertionError("create only stores new payments");
+		}
+
+		@Override
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return saved.stream().filter(p -> p.id().equals(paymentId)).findFirst();
 		}
-	}, idempotency);
+	}, idempotency, TransactionOperations.withoutTransaction());
 
 	@Test
 	void createsPaymentWhenBothAccountsAreActive() {
@@ -228,10 +234,15 @@ class CreatePaymentServiceTest {
 					}
 
 					@Override
+					public boolean updateStatus(Payment payment, PaymentStatus expected) {
+						throw new AssertionError("create only stores new payments");
+					}
+
+					@Override
 					public Optional<Payment> findById(PaymentId paymentId) {
 						return saved.stream().filter(p -> p.id().equals(paymentId)).findFirst();
 					}
-				}, racingPort);
+				}, racingPort, TransactionOperations.withoutTransaction());
 	}
 
 	private static CreatePaymentCommand command(String amount, String idempotencyKey) {

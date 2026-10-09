@@ -5,6 +5,7 @@ import com.example.payment.application.exception.PaymentAuthorizationException;
 import com.example.payment.application.exception.PaymentLimitExceededException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.port.secondary.AuditPort;
 import com.example.payment.application.port.secondary.PaymentExecutionPort.Outcome;
 import com.example.payment.application.port.secondary.PaymentRepository;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
@@ -16,6 +17,7 @@ import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
 import com.example.payment.domain.valueobject.PaymentStatus;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -37,11 +39,24 @@ class ExecutePaymentServiceTest {
 	private int authorizationRequests;
 	private boolean authorized = true;
 	private boolean withinLimit = true;
+	private final List<String> audited = new ArrayList<>();
+	private final AuditPort audit = (paymentId, from, to) -> audited.add(from + "->" + to);
+	// What the stored status would be if another request had changed it after we read the payment.
+	private PaymentStatus changedByAnotherRequest;
 
 	private final PaymentRepository repository = new PaymentRepository() {
 		@Override
 		public void save(Payment payment) {
+			throw new AssertionError("execute only updates existing payments");
+		}
+
+		@Override
+		public boolean updateStatus(Payment payment, PaymentStatus expected) {
+			if (expected == changedByAnotherRequest) {
+				return false;
+			}
 			savedStatuses.add(payment.status());
+			return true;
 		}
 
 		@Override
@@ -59,6 +74,19 @@ class ExecutePaymentServiceTest {
 		// PROCESSING is stored before the payment system is called, so a crash can't leave it looking unsent.
 		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED, PaymentStatus.PROCESSING,
 				PaymentStatus.COMPLETED);
+		assertThat(audited).containsExactly("CREATED->AUTHORIZED", "AUTHORIZED->PROCESSING", "PROCESSING->COMPLETED");
+	}
+
+	@Test
+	void losesToARequestThatChangedThePaymentFirstAndSendsNothing() {
+		// e.g. a concurrent execute or cancel moved it on after we read it as AUTHORIZED
+		changedByAnotherRequest = PaymentStatus.AUTHORIZED;
+
+		assertThatExceptionOfType(InvalidPaymentStateException.class)
+				.isThrownBy(() -> serviceAnswering(Outcome.EXECUTED).executePayment(command(stored.id())))
+				.withMessage("Payment " + stored.id() + " was changed by another request and cannot become PROCESSING");
+		assertThat(statusWhenSent).isEmpty();
+		assertThat(audited).containsExactly("CREATED->AUTHORIZED");
 	}
 
 	@Test
@@ -68,6 +96,7 @@ class ExecutePaymentServiceTest {
 		assertThat(result.status()).isEqualTo(PaymentStatus.FAILED);
 		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED, PaymentStatus.PROCESSING,
 				PaymentStatus.FAILED);
+		assertThat(audited).endsWith("PROCESSING->FAILED");
 	}
 
 	@Test
@@ -80,6 +109,7 @@ class ExecutePaymentServiceTest {
 		assertThat(stored.status()).isEqualTo(PaymentStatus.CREATED);
 		assertThat(savedStatuses).isEmpty();
 		assertThat(statusWhenSent).isEmpty();
+		assertThat(audited).isEmpty();
 	}
 
 	@Test
@@ -100,14 +130,19 @@ class ExecutePaymentServiceTest {
 		ExecutePaymentService service = new ExecutePaymentService(new PaymentRepository() {
 			@Override
 			public void save(Payment payment) {
-				savedStatuses.add(payment.status());
+				throw new AssertionError("execute only updates existing payments");
+			}
+
+			@Override
+			public boolean updateStatus(Payment payment, PaymentStatus expected) {
+				return true;
 			}
 
 			@Override
 			public Optional<Payment> findById(PaymentId paymentId) {
 				return Optional.of(authorizedEarlier);
 			}
-		}, this::authorize, payment -> true, payment -> Outcome.EXECUTED);
+		}, this::authorize, payment -> true, payment -> Outcome.EXECUTED, audit, TransactionOperations.withoutTransaction());
 
 		assertThat(service.executePayment(command(stored.id())).status()).isEqualTo(PaymentStatus.COMPLETED);
 		assertThat(authorizationRequests).isZero();
@@ -146,7 +181,7 @@ class ExecutePaymentServiceTest {
 		return new ExecutePaymentService(repository, this::authorize, payment -> withinLimit, payment -> {
 			statusWhenSent.add(payment.status());
 			return outcome;
-		});
+		}, audit, TransactionOperations.withoutTransaction());
 	}
 
 	private boolean authorize(Payment payment) {
