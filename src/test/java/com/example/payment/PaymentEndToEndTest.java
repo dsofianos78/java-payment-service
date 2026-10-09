@@ -58,7 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 class PaymentEndToEndTest {
 
-	// The same fictional account, authorization, limit and payment systems compose.yaml serves locally.
+	// The same fictional account, authorization, limit and payment systems docker-compose.yml serves locally.
 	@RegisterExtension
 	static WireMockExtension externalSystems = WireMockExtension.newInstance()
 			.options(wireMockConfig().dynamicPort().usingFilesUnderDirectory("wiremock"))

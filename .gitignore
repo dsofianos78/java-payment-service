@@ -34,3 +34,10 @@ build/
 
 ### Local tooling ###
 .memsearch/
+
+### Secrets: never committed. Real values come from the environment (docs/episodes/19) ###
+.env
+*.pem
+*.key
+*.p12
+*.jks

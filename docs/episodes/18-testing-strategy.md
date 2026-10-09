@@ -1,6 +1,6 @@
 # Episode 18 — Testing Strategy
 
-Git tag: `episode-18-testing-strategy` · Previous: [Episode 17 — Asynchronous Processing](17-async-processing.md) · Next: Episode 19 — Production-Style Local Environment
+Git tag: `episode-18-testing-strategy` · Previous: [Episode 17 — Asynchronous Processing](17-async-processing.md) · Next: [Episode 19 — Production-Style Local Environment](19-local-environment.md)
 
 ## Goal
 

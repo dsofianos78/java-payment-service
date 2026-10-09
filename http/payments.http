@@ -1,6 +1,6 @@
 # Manual API calls, grown episode by episode.
 # Run with IntelliJ HTTP Client or the VS Code "REST Client" extension
-# against a running app: ./mvnw spring-boot:run
+# against a running app: ./mvnw spring-boot:run, or since Episode 19 docker compose --profile app up --build
 #
 # Since Episode 10 every POST /payments needs an Idempotency-Key. Re-running a request
 # with the same key returns the payment it created the first time; change the key
@@ -148,7 +148,7 @@ Content-Type: application/json
   "reference": "Invoice 12345"
 }
 
-### Episode 07 — ask the fake account system directly (WireMock from compose.yaml)
+### Episode 07 — ask the fake account system directly (WireMock from docker-compose.yml)
 GET http://localhost:8089/accounts/ACC-80001
 
 ### Episode 08 — unknown payment -> 404 problem details "Payment ... does not exist"

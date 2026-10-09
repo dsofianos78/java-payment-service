@@ -1,7 +1,9 @@
-# The payment service runs on the host (./mvnw spring-boot:run), not in compose.
+# One target per way of running the service; whichever isn't running shows as down.
+#   payment-service:8080         in its container (docker compose --profile app up), over the compose network
+#   host.docker.internal:8080    on the host (./mvnw spring-boot:run). A host firewall can block this one.
 scrape_configs:
   - job_name: payment-service
     scrape_interval: 5s
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["host.docker.internal:8080"]
+      - targets: ["payment-service:8080", "host.docker.internal:8080"]
