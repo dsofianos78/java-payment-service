@@ -11,7 +11,7 @@ import com.example.payment.application.exception.PaymentLimitExceededException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.primary.CancelPaymentUseCase;
-import com.example.payment.application.port.primary.ExecutePaymentUseCase;
+import com.example.payment.application.port.primary.RequestPaymentExecutionUseCase;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.usecase.query.GetPaymentResult;
 import com.example.payment.domain.entity.Payment;
@@ -51,7 +51,7 @@ class PaymentControllerPortTest {
 			}
 			""";
 
-	private static final ExecutePaymentUseCase NO_EXECUTE = command -> { throw new AssertionError("not an execute"); };
+	private static final RequestPaymentExecutionUseCase NO_EXECUTE = command -> { throw new AssertionError("not an execute"); };
 	private static final CancelPaymentUseCase NO_CANCEL = command -> { throw new AssertionError("not a cancel"); };
 
 	@Test
@@ -91,23 +91,20 @@ class PaymentControllerPortTest {
 	}
 
 	@Test
-	void passesThePathIdAsAnExecuteCommandAndMapsThePayment() throws Exception {
-		Payment executed = Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
+	void passesThePathIdAsAnExecuteCommandAndAnswers202WithThePaymentAsItIsNow() throws Exception {
+		Payment queued = Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
 				new Money(new BigDecimal("9.99"), Currency.GBP), new PaymentReference("From stub"));
-		executed.authorize();
-		executed.startProcessing();
-		executed.complete();
 		MockMvc mockMvc = mockMvc(new PaymentController(
 				command -> { throw new AssertionError("not a create"); },
 				query -> { throw new AssertionError("not a query"); },
 				command -> {
 					assertThat(command.paymentId()).isEqualTo("pay-1");
-					return executed;
+					return queued;
 				}, NO_CANCEL));
 
 		mockMvc.perform(post("/payments/pay-1/execute"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.status").value("COMPLETED"));
+				.andExpect(status().isAccepted())
+				.andExpect(jsonPath("$.status").value("CREATED"));
 	}
 
 	@Test

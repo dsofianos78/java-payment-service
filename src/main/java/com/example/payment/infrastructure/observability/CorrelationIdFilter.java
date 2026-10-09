@@ -28,7 +28,7 @@ class CorrelationIdFilter extends OncePerRequestFilter {
 	static final String MDC_KEY = "correlationId";
 
 	// The header is caller input that ends up in our logs and responses: anything else is replaced, not trusted.
-	private static final Pattern VALID = Pattern.compile("[A-Za-z0-9._-]{1,64}");
+	static final Pattern VALID = Pattern.compile("[A-Za-z0-9._-]{1,64}");
 
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)

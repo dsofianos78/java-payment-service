@@ -2,6 +2,7 @@ package com.example.payment.infrastructure.adapter.primary.web;
 
 import com.example.payment.TestcontainersConfiguration;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import com.example.payment.infrastructure.adapter.primary.messaging.PaymentProcessingMessage;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -11,12 +12,14 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -30,10 +33,12 @@ import java.util.concurrent.Future;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -70,6 +75,9 @@ class PaymentControllerTest {
 
 	@Autowired
 	JdbcClient jdbc;
+
+	@Autowired
+	KafkaTemplate<String, PaymentProcessingMessage> kafkaTemplate;
 
 	@Test
 	void createsAndStoresPayment() throws Exception {
@@ -181,14 +189,16 @@ class PaymentControllerTest {
 				.andExpect(jsonPath("$.detail").value("Source account ACC-99999 does not exist"));
 	}
 
+	// 202 with the payment as it is now; the consumer moves it on after the response has gone.
 	@Test
 	void executesAPaymentToCompletedAndStoresIt() throws Exception {
 		String paymentId = createPayment("Invoice 12345");
 
 		mockMvc.perform(post("/payments/{id}/execute", paymentId))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.status").value("COMPLETED"));
+				.andExpect(status().isAccepted())
+				.andExpect(jsonPath("$.status").value("CREATED"));
 
+		awaitStatus(paymentId, "COMPLETED");
 		mockMvc.perform(get("/payments/{id}", paymentId))
 				.andExpect(jsonPath("$.status").value("COMPLETED"));
 	}
@@ -197,68 +207,100 @@ class PaymentControllerTest {
 	void paymentThePaymentSystemRejectsEndsFailed() throws Exception {
 		String paymentId = createPayment("REJECT insufficient funds");
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.status").value("FAILED"));
+		execute(paymentId);
 
-		assertThat(jdbc.sql("SELECT status FROM payment WHERE id = ?::uuid").param(paymentId).query(String.class).single())
-				.isEqualTo("FAILED");
+		awaitStatus(paymentId, "FAILED");
 	}
 
 	@Test
 	void paymentWhoseAnswerIsLostStaysProcessingAndCannotBeSentAgain() throws Exception {
 		String paymentId = createPayment("TIMEOUT slow payment system");
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.status").value("PROCESSING"));
+		execute(paymentId);
+
+		await().untilAsserted(() -> {
+			externalSystems.verify(1, postRequestedFor(urlEqualTo("/payment-orders"))
+					.withHeader("Idempotency-Key", equalTo(paymentId)));
+			assertThat(storedStatus(paymentId)).isEqualTo("PROCESSING");
+		});
 		mockMvc.perform(post("/payments/{id}/execute", paymentId))
 				.andExpect(status().isConflict());
+	}
 
-		externalSystems.verify(1, postRequestedFor(urlEqualTo("/payment-orders"))
-				.withHeader("Idempotency-Key", equalTo(paymentId)));
+	// Kafka delivers at least once, so the same message twice is normal. The second finds the payment past
+	// AUTHORIZED and is dropped: the payment system is asked once.
+	@Test
+	void aDuplicateMessageDoesNotSendThePaymentTwice() throws Exception {
+		String paymentId = createPayment("Duplicate message");
+
+		kafkaTemplate.send(PaymentProcessingMessage.TOPIC, paymentId, new PaymentProcessingMessage(paymentId));
+		kafkaTemplate.send(PaymentProcessingMessage.TOPIC, paymentId, new PaymentProcessingMessage(paymentId));
+
+		awaitStatus(paymentId, "COMPLETED");
+		await().during(Duration.ofMillis(500)).untilAsserted(() ->
+				externalSystems.verify(1, postRequestedFor(urlEqualTo("/payment-orders"))
+						.withHeader("Idempotency-Key", equalTo(paymentId))));
+		assertThat(jdbc.sql("SELECT count(*) FROM payment_audit WHERE payment_id = ?::uuid").param(paymentId)
+				.query(Integer.class).single()).isEqualTo(3);
+	}
+
+	// The request's correlation ID travels in the message header, so the consumer's call is correlated too.
+	@Test
+	void correlationIdFollowsThePaymentThroughKafka() throws Exception {
+		String paymentId = createPayment("Correlated execution");
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId).header("X-Correlation-Id", "corr-episode-17"))
+				.andExpect(status().isAccepted());
+
+		await().untilAsserted(() -> externalSystems.verify(postRequestedFor(urlEqualTo("/payment-orders"))
+				.withHeader("Idempotency-Key", equalTo(paymentId))
+				.withHeader("X-Correlation-Id", equalTo("corr-episode-17"))));
 	}
 
 	@Test
 	void executingTwiceIs409() throws Exception {
 		String paymentId = createPayment("Invoice 12345");
-		mockMvc.perform(post("/payments/{id}/execute", paymentId)).andExpect(status().isOk());
+		execute(paymentId);
+		awaitStatus(paymentId, "COMPLETED");
 
 		mockMvc.perform(post("/payments/{id}/execute", paymentId))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " is COMPLETED and cannot become PROCESSING"));
 	}
 
+	// The decline happens after the 202, so the caller no longer gets a 422: the payment just stays CREATED.
 	@Test
-	void paymentTheAuthorizationSystemDeclinesIs422AndStaysCreated() throws Exception {
+	void paymentTheAuthorizationSystemDeclinesStaysCreated() throws Exception {
 		String paymentId = createPayment("ACC-70001", "250.00", "Declined by authorization");
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
-				.andExpect(status().isUnprocessableContent())
-				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " was not authorized"));
-		mockMvc.perform(get("/payments/{id}", paymentId))
-				.andExpect(jsonPath("$.status").value("CREATED"));
+		execute(paymentId);
+
+		await().untilAsserted(() -> externalSystems.verify(postRequestedFor(urlEqualTo("/authorizations"))
+				.withRequestBody(matchingJsonPath("$[?(@.creditorAccount == 'ACC-70001')]"))));
+		assertThat(storedStatus(paymentId)).isEqualTo("CREATED");
 	}
 
 	// Creating it is fine: limits depend on what the account has spent by the time the money moves.
 	@Test
-	void paymentOverTheLimitIs422AndStaysAuthorized() throws Exception {
+	void paymentOverTheLimitStaysAuthorized() throws Exception {
 		String paymentId = createPayment("ACC-20001", "10000.01", "Over the limit");
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
-				.andExpect(status().isUnprocessableContent())
-				.andExpect(jsonPath("$.detail").value("Payment " + paymentId + " exceeds the source account's limit"));
-		mockMvc.perform(get("/payments/{id}", paymentId))
-				.andExpect(jsonPath("$.status").value("AUTHORIZED"));
+		execute(paymentId);
+
+		await().untilAsserted(() -> externalSystems.verify(postRequestedFor(urlEqualTo("/limit-checks"))
+				.withRequestBody(matchingJsonPath("$[?(@.amount > 10000)]"))));
+		assertThat(storedStatus(paymentId)).isEqualTo("AUTHORIZED");
+		externalSystems.verify(0, postRequestedFor(urlEqualTo("/payment-orders"))
+				.withHeader("Idempotency-Key", equalTo(paymentId)));
 	}
 
 	@Test
 	void paymentAtTheLimitCompletes() throws Exception {
 		String paymentId = createPayment("ACC-20001", "10000.00", "At the limit");
 
-		mockMvc.perform(post("/payments/{id}/execute", paymentId))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.status").value("COMPLETED"));
+		execute(paymentId);
+
+		awaitStatus(paymentId, "COMPLETED");
 	}
 
 	@Test
@@ -282,7 +324,8 @@ class PaymentControllerTest {
 	@Test
 	void cancellingACompletedPaymentIs409() throws Exception {
 		String paymentId = createPayment("Invoice 12345");
-		mockMvc.perform(post("/payments/{id}/execute", paymentId)).andExpect(status().isOk());
+		execute(paymentId);
+		awaitStatus(paymentId, "COMPLETED");
 
 		mockMvc.perform(post("/payments/{id}/cancel", paymentId))
 				.andExpect(status().isConflict())
@@ -416,7 +459,9 @@ class PaymentControllerTest {
 
 	@Test
 	void prometheusSeesPaymentMetrics() throws Exception {
-		mockMvc.perform(post("/payments/" + createPayment("Metrics") + "/execute")).andExpect(status().isOk());
+		String paymentId = createPayment("Metrics");
+		execute(paymentId);
+		awaitStatus(paymentId, "COMPLETED");
 
 		mockMvc.perform(get("/actuator/prometheus"))
 				.andExpect(status().isOk())
@@ -427,6 +472,18 @@ class PaymentControllerTest {
 						containsString("payments_total{status=\"completed\"}"),
 						containsString("payment_execution_duration_seconds_count"),
 						containsString("resilience4j_circuitbreaker_state{name=\"payment-system\",state=\"closed\"} 1.0"))));
+	}
+
+	private void execute(String paymentId) throws Exception {
+		mockMvc.perform(post("/payments/{id}/execute", paymentId)).andExpect(status().isAccepted());
+	}
+
+	private void awaitStatus(String paymentId, String expected) {
+		await().untilAsserted(() -> assertThat(storedStatus(paymentId)).isEqualTo(expected));
+	}
+
+	private String storedStatus(String paymentId) {
+		return jdbc.sql("SELECT status FROM payment WHERE id = ?::uuid").param(paymentId).query(String.class).single();
 	}
 
 	private String createPayment(String reference) throws Exception {

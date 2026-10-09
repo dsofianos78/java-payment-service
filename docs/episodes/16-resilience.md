@@ -1,6 +1,6 @@
 # Episode 16 — Resilience
 
-Git tag: `episode-16-resilience` · Previous: [Episode 15 — Observability](15-observability.md) · Next: Episode 17 — Asynchronous Processing
+Git tag: `episode-16-resilience` · Previous: [Episode 15 — Observability](15-observability.md) · Next: [Episode 17 — Asynchronous Processing](17-async-processing.md)
 
 ## Goal
 

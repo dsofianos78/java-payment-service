@@ -22,6 +22,14 @@ services:
     volumes:
       - ./wiremock:/home/wiremock:ro
 
+  # The message broker for asynchronous processing (docs/episodes/17). A single node, no replication:
+  # local use only. Spring Boot has no Docker Compose connection for Kafka, so it uses a fixed port,
+  # localhost:9092, which is also Spring's default bootstrap server.
+  kafka:
+    image: apache/kafka-native:4.1.1
+    ports:
+      - "9092:9092"
+
   # Scrapes the running app's /actuator/prometheus every 5s (observability/prometheus.yml).
   prometheus:
     image: prom/prometheus:v3.7.3

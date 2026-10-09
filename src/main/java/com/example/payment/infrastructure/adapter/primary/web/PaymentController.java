@@ -2,8 +2,8 @@ package com.example.payment.infrastructure.adapter.primary.web;
 
 import com.example.payment.application.port.primary.CancelPaymentUseCase;
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
-import com.example.payment.application.port.primary.ExecutePaymentUseCase;
 import com.example.payment.application.port.primary.GetPaymentUseCase;
+import com.example.payment.application.port.primary.RequestPaymentExecutionUseCase;
 import com.example.payment.application.usecase.command.CancelPaymentCommand;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.application.usecase.query.GetPaymentQuery;
@@ -25,14 +25,14 @@ public class PaymentController {
 	// Depends on the primary ports, never on the services that implement them.
 	private final CreatePaymentUseCase createPaymentUseCase;
 	private final GetPaymentUseCase getPaymentUseCase;
-	private final ExecutePaymentUseCase executePaymentUseCase;
+	private final RequestPaymentExecutionUseCase requestPaymentExecutionUseCase;
 	private final CancelPaymentUseCase cancelPaymentUseCase;
 
 	public PaymentController(CreatePaymentUseCase createPaymentUseCase, GetPaymentUseCase getPaymentUseCase,
-			ExecutePaymentUseCase executePaymentUseCase, CancelPaymentUseCase cancelPaymentUseCase) {
+			RequestPaymentExecutionUseCase requestPaymentExecutionUseCase, CancelPaymentUseCase cancelPaymentUseCase) {
 		this.createPaymentUseCase = createPaymentUseCase;
 		this.getPaymentUseCase = getPaymentUseCase;
-		this.executePaymentUseCase = executePaymentUseCase;
+		this.requestPaymentExecutionUseCase = requestPaymentExecutionUseCase;
 		this.cancelPaymentUseCase = cancelPaymentUseCase;
 	}
 
@@ -50,10 +50,12 @@ public class PaymentController {
 		return PaymentResponse.from(getPaymentUseCase.getPayment(new GetPaymentQuery(paymentId)));
 	}
 
-	// 200 even when the payment ends FAILED: the request was carried out, and the status says how it went.
+	// 202: queued, not done. The body shows the payment as it is now (CREATED or AUTHORIZED); the caller follows
+	// it with GET /payments/{id} until it is COMPLETED or FAILED.
 	@PostMapping("/{paymentId}/execute")
+	@ResponseStatus(HttpStatus.ACCEPTED)
 	public PaymentResponse execute(@PathVariable String paymentId) {
-		return PaymentResponse.from(executePaymentUseCase.executePayment(new ExecutePaymentCommand(paymentId)));
+		return PaymentResponse.from(requestPaymentExecutionUseCase.requestExecution(new ExecutePaymentCommand(paymentId)));
 	}
 
 	// No status check here: whether a payment can still be cancelled is the domain's decision (409 if not).

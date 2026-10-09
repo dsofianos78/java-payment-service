@@ -188,14 +188,14 @@ Content-Type: application/json
   "reference": "Invoice 12345"
 }
 
-### Episode 09 — execute it -> 200 "COMPLETED" (paste the paymentId from the response above)
+### Episode 09 — execute it -> 200 "COMPLETED" (since Episode 17: 202 "CREATED", then GET shows COMPLETED) (paste the paymentId from the response above)
 @executePaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{executePaymentId}}/execute
 
 ### Episode 09 — execute it again -> 409 "is COMPLETED and cannot become PROCESSING"
 POST {{baseUrl}}/payments/{{executePaymentId}}/execute
 
-### Episode 09 — a payment the stub payment system rejects -> 201, then execute it -> 200 "FAILED"
+### Episode 09 — a payment the stub payment system rejects -> 201, then execute it -> 200 "FAILED" (since Episode 17: 202, then GET shows FAILED)
 POST {{baseUrl}}/payments
 Idempotency-Key: episode-09-request-2
 Content-Type: application/json
@@ -295,7 +295,7 @@ Content-Type: application/json
   "reference": "Invoice 12012"
 }
 
-### Episode 12 — execute it -> 422 "was not authorized", payment stays CREATED (paste the paymentId above)
+### Episode 12 — execute it -> 422 "was not authorized", payment stays CREATED (since Episode 17: 202, the decline is only in the log; GET still shows CREATED) (paste the paymentId above)
 @declinedPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{declinedPaymentId}}/execute
 
@@ -312,7 +312,7 @@ Content-Type: application/json
   "reference": "Invoice 12013"
 }
 
-### Episode 12 — execute it -> 422 "exceeds the source account's limit", payment is now AUTHORIZED (paste the paymentId above)
+### Episode 12 — execute it -> 422 "exceeds the source account's limit", payment is now AUTHORIZED (since Episode 17: 202, then GET shows AUTHORIZED) (paste the paymentId above)
 @overLimitPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{overLimitPaymentId}}/execute
 
@@ -329,7 +329,7 @@ Content-Type: application/json
   "reference": "Invoice 13013"
 }
 
-### Episode 13 — execute it -> 200 COMPLETED; three rows in payment_audit (see docs/episodes/13) (paste the paymentId above)
+### Episode 13 — execute it -> 200 COMPLETED (since Episode 17: 202, then COMPLETED); three rows in payment_audit (see docs/episodes/13) (paste the paymentId above)
 @auditedPaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{auditedPaymentId}}/execute
 
@@ -363,9 +363,38 @@ Content-Type: application/json
   "reference": "TIMEOUT Invoice 16016"
 }
 
-### Episode 16 — execute it -> after 5s, 200 with "status": "PROCESSING" (outcome unknown); again -> 409 (paste the paymentId above)
+### Episode 16 — execute it -> after 5s, 200 with "status": "PROCESSING" (outcome unknown); again -> 409 (since Episode 17: 202 at once; GET shows PROCESSING) (paste the paymentId above)
 @unknownOutcomePaymentId = 00000000-0000-0000-0000-000000000000
 POST {{baseUrl}}/payments/{{unknownOutcomePaymentId}}/execute
 
 ### Episode 16 — circuit breaker states (after `docker compose stop account-system` and a few creates, account-system is open)
 GET {{baseUrl}}/actuator/prometheus
+
+### Episode 17 — create a payment to execute asynchronously -> 201
+POST {{baseUrl}}/payments
+Idempotency-Key: episode-17-demo-key-1
+X-Correlation-Id: episode-17-demo
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "Invoice 17017"
+}
+
+### Episode 17 — execute it -> 202 with "status": "CREATED": queued, not done yet (paste the paymentId above)
+@asyncPaymentId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/payments/{{asyncPaymentId}}/execute
+X-Correlation-Id: episode-17-demo
+
+### Episode 17 — follow it -> 200 "COMPLETED" a moment later; the consumer's log lines carry correlationId episode-17-demo
+GET {{baseUrl}}/payments/{{asyncPaymentId}}
+
+### Episode 17 — execute it again -> 409 "is COMPLETED and cannot become PROCESSING", nothing is queued
+POST {{baseUrl}}/payments/{{asyncPaymentId}}/execute
+
+### Episode 17 — broker down (`docker compose stop kafka`): execute a payment that is still CREATED -> 503 "Message broker is unavailable" after 2s
+@brokerDownPaymentId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/payments/{{brokerDownPaymentId}}/execute
