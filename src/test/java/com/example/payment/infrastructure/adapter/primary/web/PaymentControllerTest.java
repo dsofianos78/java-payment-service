@@ -30,6 +30,7 @@ import java.util.concurrent.Future;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 class PaymentControllerTest {
 
-	// The same fictional account, authorization and limit systems compose.yaml serves locally.
+	// The same fictional account, authorization, limit and payment systems compose.yaml serves locally.
 	@RegisterExtension
 	static WireMockExtension externalSystems = WireMockExtension.newInstance()
 			.options(wireMockConfig().dynamicPort().usingFilesUnderDirectory("wiremock"))
@@ -59,6 +60,9 @@ class PaymentControllerTest {
 		registry.add("account-system.url", externalSystems::baseUrl);
 		registry.add("authorization-system.url", externalSystems::baseUrl);
 		registry.add("limit-system.url", externalSystems::baseUrl);
+		registry.add("payment-system.url", externalSystems::baseUrl);
+		// The TIMEOUT mapping answers after 7s; no need to wait the real 5s to give up.
+		registry.add("spring.cloud.openfeign.client.config.payment-system.read-timeout", () -> "300");
 	}
 
 	@Autowired
@@ -190,7 +194,7 @@ class PaymentControllerTest {
 	}
 
 	@Test
-	void paymentTheStubRejectsEndsFailed() throws Exception {
+	void paymentThePaymentSystemRejectsEndsFailed() throws Exception {
 		String paymentId = createPayment("REJECT insufficient funds");
 
 		mockMvc.perform(post("/payments/{id}/execute", paymentId))
@@ -199,6 +203,20 @@ class PaymentControllerTest {
 
 		assertThat(jdbc.sql("SELECT status FROM payment WHERE id = ?::uuid").param(paymentId).query(String.class).single())
 				.isEqualTo("FAILED");
+	}
+
+	@Test
+	void paymentWhoseAnswerIsLostStaysProcessingAndCannotBeSentAgain() throws Exception {
+		String paymentId = createPayment("TIMEOUT slow payment system");
+
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("PROCESSING"));
+		mockMvc.perform(post("/payments/{id}/execute", paymentId))
+				.andExpect(status().isConflict());
+
+		externalSystems.verify(1, postRequestedFor(urlEqualTo("/payment-orders"))
+				.withHeader("Idempotency-Key", equalTo(paymentId)));
 	}
 
 	@Test
@@ -407,7 +425,8 @@ class PaymentControllerTest {
 						containsString("payments_total{status=\"authorized\"}"),
 						containsString("payments_total{status=\"processing\"}"),
 						containsString("payments_total{status=\"completed\"}"),
-						containsString("payment_execution_duration_seconds_count"))));
+						containsString("payment_execution_duration_seconds_count"),
+						containsString("resilience4j_circuitbreaker_state{name=\"payment-system\",state=\"closed\"} 1.0"))));
 	}
 
 	private String createPayment(String reference) throws Exception {

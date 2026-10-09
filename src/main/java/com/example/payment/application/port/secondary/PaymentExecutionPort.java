@@ -14,6 +14,11 @@ public interface PaymentExecutionPort {
 		/** The money moved. */
 		EXECUTED,
 		/** The payment system refused it, e.g. insufficient funds. */
-		REJECTED
+		REJECTED,
+		/**
+		 * No answer: a timeout, a dropped connection, an error. The payment
+		 * may or may not have gone through; only the payment system knows.
+		 */
+		UNKNOWN
 	}
 }

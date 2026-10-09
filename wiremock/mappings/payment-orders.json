@@ -1,0 +1,24 @@
+{
+  "mappings": [
+    {
+      "priority": 1,
+      "request": { "method": "POST", "url": "/payment-orders",
+        "bodyPatterns": [ { "matchesJsonPath": { "expression": "$.reference", "matches": "^REJECT.*" } } ] },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "REJECTED", "reason": "Insufficient funds" } }
+    },
+    {
+      "priority": 1,
+      "request": { "method": "POST", "url": "/payment-orders",
+        "bodyPatterns": [ { "matchesJsonPath": { "expression": "$.reference", "matches": "^TIMEOUT.*" } } ] },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "SETTLED" }, "fixedDelayMilliseconds": 7000 }
+    },
+    {
+      "priority": 10,
+      "request": { "method": "POST", "url": "/payment-orders" },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "SETTLED" } }
+    }
+  ]
+}

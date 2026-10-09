@@ -349,3 +349,23 @@ Content-Type: application/json
 
 ### Episode 15 — the metrics Prometheus scrapes (look for payments_total, payment_execution_duration_seconds)
 GET {{baseUrl}}/actuator/prometheus
+
+### Episode 16 — create a payment the payment system settles, but answers too late -> 201
+POST {{baseUrl}}/payments
+Idempotency-Key: episode-16-demo-key-1
+Content-Type: application/json
+
+{
+  "sourceAccountId": "ACC-10001",
+  "destinationAccountId": "ACC-20001",
+  "amount": 250.00,
+  "currency": "EUR",
+  "reference": "TIMEOUT Invoice 16016"
+}
+
+### Episode 16 — execute it -> after 5s, 200 with "status": "PROCESSING" (outcome unknown); again -> 409 (paste the paymentId above)
+@unknownOutcomePaymentId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/payments/{{unknownOutcomePaymentId}}/execute
+
+### Episode 16 — circuit breaker states (after `docker compose stop account-system` and a few creates, account-system is open)
+GET {{baseUrl}}/actuator/prometheus

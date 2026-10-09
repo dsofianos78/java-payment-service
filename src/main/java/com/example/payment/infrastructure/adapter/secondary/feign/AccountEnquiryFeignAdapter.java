@@ -6,6 +6,11 @@ import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.AccountStatus;
 import com.example.payment.infrastructure.observability.PaymentMetrics;
 import feign.FeignException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -24,17 +29,25 @@ public class AccountEnquiryFeignAdapter implements AccountEnquiryPort {
 
 	private final AccountClient accountClient;
 	private final PaymentMetrics paymentMetrics;
+	private final CircuitBreaker circuitBreaker;
+	private final Retry retry;
 
-	AccountEnquiryFeignAdapter(AccountClient accountClient, PaymentMetrics paymentMetrics) {
+	AccountEnquiryFeignAdapter(AccountClient accountClient, PaymentMetrics paymentMetrics,
+			CircuitBreakerRegistry circuitBreakers, RetryRegistry retries) {
 		this.accountClient = accountClient;
 		this.paymentMetrics = paymentMetrics;
+		this.circuitBreaker = circuitBreakers.circuitBreaker("account-system");
+		this.retry = retries.retry("account-system");
 	}
 
-	// ponytail: Feign default timeouts, no retries; Episode 16 adds them
+	// A read: asking again can't change anything, so a failed attempt is retried (application.properties).
+	// Each attempt counts towards the circuit breaker; once it is open, nothing is retried or sent.
 	@Override
 	public Optional<AccountStatus> findStatus(AccountId accountId) {
+		AccountResponse account;
 		try {
-			return Optional.of(toAccountStatus(accountClient.getAccount(accountId.value()).state()));
+			account = retry.executeSupplier(() -> circuitBreaker.executeSupplier(
+					() -> accountClient.getAccount(accountId.value())));
 		}
 		catch (FeignException.NotFound e) {
 			return Optional.empty();
@@ -46,6 +59,11 @@ public class AccountEnquiryFeignAdapter implements AccountEnquiryPort {
 			paymentMetrics.accountSystemError();
 			throw new AccountUnavailableException(e);
 		}
+		catch (CallNotPermittedException e) {
+			log.warn("Account system circuit breaker is open, not called");
+			throw new AccountUnavailableException(e);
+		}
+		return Optional.of(toAccountStatus(account.state()));
 	}
 
 	private static AccountStatus toAccountStatus(String state) {

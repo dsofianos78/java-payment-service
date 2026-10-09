@@ -6,6 +6,11 @@ import com.example.payment.domain.entity.Payment;
 import com.example.payment.infrastructure.observability.PaymentMetrics;
 import com.example.payment.infrastructure.adapter.secondary.feign.LimitClient.LimitCheckRequest;
 import feign.FeignException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -21,23 +26,34 @@ public class LimitAdapter implements PaymentLimitPort {
 
 	private final LimitClient limitClient;
 	private final PaymentMetrics paymentMetrics;
+	private final CircuitBreaker circuitBreaker;
+	private final Retry retry;
 
-	LimitAdapter(LimitClient limitClient, PaymentMetrics paymentMetrics) {
+	LimitAdapter(LimitClient limitClient, PaymentMetrics paymentMetrics, CircuitBreakerRegistry circuitBreakers,
+			RetryRegistry retries) {
 		this.limitClient = limitClient;
 		this.paymentMetrics = paymentMetrics;
+		this.circuitBreaker = circuitBreakers.circuitBreaker("limit-system");
+		this.retry = retries.retry("limit-system");
 	}
 
-	// ponytail: Feign default timeouts, no retries; Episode 16 adds them
+	// A question, not an instruction: asking twice is harmless, so a failed attempt is retried.
 	@Override
 	public boolean isWithinLimit(Payment payment) {
 		String result;
+		LimitCheckRequest request = new LimitCheckRequest(payment.sourceAccountId().value(),
+				payment.amount().amount(), payment.amount().currency().name());
 		try {
-			result = limitClient.check(new LimitCheckRequest(payment.sourceAccountId().value(),
-					payment.amount().amount(), payment.amount().currency().name())).result();
+			result = retry.executeSupplier(() -> circuitBreaker.executeSupplier(
+					() -> limitClient.check(request))).result();
 		}
 		catch (FeignException e) {
 			log.warn("Limit system unavailable (status {})", e.status());
 			paymentMetrics.paymentSystemError("limit");
+			throw new ExternalSystemUnavailableException("Limit system", e);
+		}
+		catch (CallNotPermittedException e) {
+			log.warn("Limit system circuit breaker is open, not called");
 			throw new ExternalSystemUnavailableException("Limit system", e);
 		}
 		return switch (result) {

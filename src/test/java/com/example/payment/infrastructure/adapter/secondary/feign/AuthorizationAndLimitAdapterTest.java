@@ -14,6 +14,11 @@ import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.springboot.circuitbreaker.autoconfigure.CircuitBreakerAutoConfiguration;
+import io.github.resilience4j.springboot.retry.autoconfigure.RetryAutoConfiguration;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
@@ -28,6 +33,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
@@ -35,12 +43,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The real Feign clients against fake authorization and limit systems over
- * real HTTP. Only Feign and JSON are started.
+ * real HTTP. Only Feign, JSON and Resilience4j are started.
  */
 @SpringBootTest(classes = {FeignConfiguration.class, AuthorizationAdapter.class, LimitAdapter.class,
 		PaymentMetrics.class, SimpleMeterRegistry.class})
 @ImportAutoConfiguration({FeignAutoConfiguration.class, HttpMessageConvertersAutoConfiguration.class,
-		JacksonAutoConfiguration.class})
+		JacksonAutoConfiguration.class, CircuitBreakerAutoConfiguration.class, RetryAutoConfiguration.class})
 class AuthorizationAndLimitAdapterTest {
 
 	@RegisterExtension
@@ -53,6 +61,7 @@ class AuthorizationAndLimitAdapterTest {
 		registry.add("account-system.url", externalSystems::baseUrl);
 		registry.add("authorization-system.url", externalSystems::baseUrl);
 		registry.add("limit-system.url", externalSystems::baseUrl);
+		registry.add("payment-system.url", externalSystems::baseUrl);
 	}
 
 	@Autowired
@@ -63,6 +72,15 @@ class AuthorizationAndLimitAdapterTest {
 
 	@Autowired
 	MeterRegistry meterRegistry;
+
+	@Autowired
+	CircuitBreakerRegistry circuitBreakers;
+
+	// One breaker per system for the whole context: failures in one test must not open it for the next.
+	@BeforeEach
+	void closeCircuitBreakers() {
+		circuitBreakers.getAllCircuitBreakers().forEach(CircuitBreaker::reset);
+	}
 
 	private final Payment payment = Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
 			new Money(new BigDecimal("250.00"), Currency.EUR), new PaymentReference("Invoice 12345"));
@@ -101,6 +119,18 @@ class AuthorizationAndLimitAdapterTest {
 				.isInstanceOf(ExternalSystemUnavailableException.class)
 				.hasMessage("Authorization system is unavailable");
 		assertThat(paymentSystemErrors("authorization")).isEqualTo(errorsBefore + 1);
+		externalSystems.verify(3, postRequestedFor(urlEqualTo("/authorizations")));
+	}
+
+	@Test
+	void askingTwiceIsHarmlessSoAFailedAuthorizationIsRetried() {
+		externalSystems.stubFor(post("/authorizations").inScenario("flaky").whenScenarioStateIs(STARTED)
+				.willReturn(aResponse().withStatus(503)).willSetStateTo("recovered"));
+		externalSystems.stubFor(post("/authorizations").inScenario("flaky").whenScenarioStateIs("recovered")
+				.willReturn(okJson("{ \"decision\": \"APPROVED\" }")));
+
+		assertThat(authorizationAdapter.isAuthorized(payment)).isTrue();
+		externalSystems.verify(2, postRequestedFor(urlEqualTo("/authorizations")));
 	}
 
 	@Test

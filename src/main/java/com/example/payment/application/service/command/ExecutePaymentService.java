@@ -97,6 +97,12 @@ public class ExecutePaymentService implements ExecutePaymentUseCase {
 		switch (outcome) {
 			case EXECUTED -> payment.complete();
 			case REJECTED -> payment.fail();
+			// No answer is not a "no": the money may have moved. PROCESSING is the truth, and it also blocks
+			// a second execute. Only the payment system can settle it (reconciliation, docs/episodes/16).
+			case UNKNOWN -> {
+				log.warn("Payment {} left PROCESSING: payment system outcome unknown", payment.id());
+				return payment;
+			}
 		}
 		store(payment, PaymentStatus.PROCESSING);
 		return payment;

@@ -1,6 +1,6 @@
 # Episode 15 — Observability
 
-Git tag: `episode-15-observability` · Previous: [Episode 14 — Architecture Tests](14-architecture-tests.md) · Next: Episode 16 — Resilience
+Git tag: `episode-15-observability` · Previous: [Episode 14 — Architecture Tests](14-architecture-tests.md) · Next: [Episode 16 — Resilience](16-resilience.md)
 
 ## Goal
 

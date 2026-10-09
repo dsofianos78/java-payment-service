@@ -43,6 +43,7 @@ git checkout episode-01-working-payment
 | 13 | [Transactions and Audit](docs/episodes/13-transactions-audit.md) | `episode-13-transactions-audit` |
 | 14 | [Architecture Tests](docs/episodes/14-architecture-tests.md) | `episode-14-architecture-tests` |
 | 15 | [Observability](docs/episodes/15-observability.md) | `episode-15-observability` |
+| 16 | [Resilience](docs/episodes/16-resilience.md) | `episode-16-resilience` |
 
 ## License
 

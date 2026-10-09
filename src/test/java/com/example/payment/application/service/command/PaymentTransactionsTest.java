@@ -61,6 +61,7 @@ class PaymentTransactionsTest {
 		registry.add("account-system.url", externalSystems::baseUrl);
 		registry.add("authorization-system.url", externalSystems::baseUrl);
 		registry.add("limit-system.url", externalSystems::baseUrl);
+		registry.add("payment-system.url", externalSystems::baseUrl);
 	}
 
 	@Autowired

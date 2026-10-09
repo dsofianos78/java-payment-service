@@ -102,6 +102,16 @@ class ExecutePaymentServiceTest {
 	}
 
 	@Test
+	void anUnknownOutcomeLeavesThePaymentProcessing() {
+		Payment result = serviceAnswering(Outcome.UNKNOWN).executePayment(command(stored.id()));
+
+		// Neither COMPLETED nor FAILED would be true. PROCESSING is, and it blocks a second execute.
+		assertThat(result.status()).isEqualTo(PaymentStatus.PROCESSING);
+		assertThat(savedStatuses).containsExactly(PaymentStatus.AUTHORIZED, PaymentStatus.PROCESSING);
+		assertThat(audited).containsExactly("CREATED->AUTHORIZED", "AUTHORIZED->PROCESSING");
+	}
+
+	@Test
 	void aDeclinedPaymentIsNeitherStoredNorSent() {
 		authorized = false;
 
