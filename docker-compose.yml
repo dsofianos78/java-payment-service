@@ -23,6 +23,7 @@ services:
       AUTHORIZATION_SYSTEM_URL: http://account-system:8080
       LIMIT_SYSTEM_URL: http://account-system:8080
       PAYMENT_SYSTEM_URL: http://account-system:8080
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://tempo:4318/v1/traces
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,7 +96,17 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # http://localhost:3000, anonymous admin, Prometheus already set up as the data source. Local use only.
+  # Receives the service's spans (docs/episodes/bonus-05) on 4318, in its container or on the host.
+  # Grafana reads them from 3200: Explore > Tempo, search by trace ID (every log line has one).
+  tempo:
+    image: grafana/tempo:2.9.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "4318:4318"
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+
+  # http://localhost:3000, anonymous admin, Prometheus and Tempo already set up as data sources. Local use only.
   grafana:
     image: grafana/grafana:12.2.1
     ports:

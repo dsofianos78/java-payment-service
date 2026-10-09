@@ -3,7 +3,12 @@ package com.example.payment;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.example.payment.infrastructure.adapter.primary.messaging.PaymentProcessingMessage;
 import com.jayway.jsonpath.JsonPath;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SpanProcessor;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -14,6 +19,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
+import org.springframework.boot.micrometer.tracing.test.autoconfigure.AutoConfigureTracing;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -37,6 +48,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
@@ -51,6 +63,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static io.opentelemetry.api.common.AttributeKey.stringKey;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.allOf;
@@ -72,10 +85,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Every request carries a token for customer CUST-1001, who holds ACC-10001
  * (wiremock/mappings/accounts.json). jwt() stands in for a signed token; two
  * tests sign real ones with the local key.
+ *
+ * Metrics and tracing are on as in production (Boot propagates the
+ * traceparent header only then), with spans kept in memory instead of sent
+ * to Tempo.
  */
 @SpringBootTest
 @ActiveProfiles("local")
 @AutoConfigureMockMvc
+@AutoConfigureMetrics
+@AutoConfigureTracing
 @Import(TestcontainersConfiguration.class)
 class PaymentEndToEndTest {
 
@@ -96,6 +115,7 @@ class PaymentEndToEndTest {
 		// Reconciliation runs often here; with the 2m threshold it only finds payments a test has backdated.
 		registry.add("payment.reconciliation.interval", () -> "200ms");
 		registry.add("payment.events.relay-interval", () -> "100ms");
+		registry.add("management.tracing.export.otlp.enabled", () -> "false");
 	}
 
 	@Autowired
@@ -112,6 +132,24 @@ class PaymentEndToEndTest {
 
 	@Value("${payment.security.local-jwt-secret}")
 	String localJwtSecret;
+
+	@Autowired
+	InMemorySpanExporter spans;
+
+	// Finished spans are kept in memory, as each one ends, instead of being sent to Tempo.
+	@TestConfiguration
+	static class Spans {
+
+		@Bean
+		InMemorySpanExporter spanExporter() {
+			return InMemorySpanExporter.create();
+		}
+
+		@Bean
+		SpanProcessor inMemorySpans(InMemorySpanExporter exporter) {
+			return SimpleSpanProcessor.create(exporter);
+		}
+	}
 
 	@Test
 	void noTokenIs401() throws Exception {
@@ -694,6 +732,74 @@ class PaymentEndToEndTest {
 						containsString("resilience4j_circuitbreaker_state{name=\"payment-system\",state=\"closed\"} 1.0"))));
 	}
 
+	// One payment, one trace: the request, the message on payment-processing, the consumer, and its call to the
+	// payment system, each a span with its parent, as Tempo would show it.
+	@Test
+	void executingAPaymentIsOneTraceFromTheRequestToThePaymentSystem() throws Exception {
+		String paymentId = completedPayment("Traced execution");
+
+		String traceId = executeRequestSpan(paymentId).getTraceId();
+		await().untilAsserted(() -> assertThat(spansOf(traceId)).extracting(SpanData::getName).contains(
+				"http post /payments/{paymentId}/execute", "payment-processing send", "payment-processing process"));
+		assertThat(spansOf(traceId)).anySatisfy(span -> assertThat(span.getAttributes().get(stringKey("http.url")))
+				.isEqualTo("/payment-orders"));
+	}
+
+	// The relay sends later, on its own thread, in a run no request started. The traceparent stored with the outbox
+	// row puts the send back in the trace of the change: its parent is the span that recorded the event.
+	@Test
+	void theEventIsSentInTheTraceOfTheChangeThatRecordedIt() throws Exception {
+		String paymentId = completedPayment("Traced event");
+		paymentEvents(paymentId, 1);
+
+		String[] traceparent = jdbc.sql("SELECT trace_context FROM payment_outbox WHERE payment_id = ?::uuid")
+				.param(paymentId).query(String.class).single().split("-");
+		String traceId = executeRequestSpan(paymentId).getTraceId();
+		assertThat(traceparent[1]).isEqualTo(traceId);
+		await().untilAsserted(() -> {
+			SpanData relay = spansOf(traceId).stream().filter(span -> span.getName().equals("payment-events relay"))
+					.findFirst().orElseThrow();
+			assertThat(relay.getParentSpanId()).isEqualTo(traceparent[2]);
+			assertThat(spansOf(traceId)).anySatisfy(span -> {
+				assertThat(span.getName()).isEqualTo("payment-events send");
+				assertThat(span.getParentSpanId()).isEqualTo(relay.getSpanId());
+			});
+		});
+	}
+
+	// Episode 15's rule covers traces too. Span names and attributes use URI templates (/accounts/{accountNumber}),
+	// and a failed call records no URL. Checked over every span the tests so far produced, plus a rejected payment.
+	@Test
+	void noSpanCarriesAnAccountOrCustomerId() throws Exception {
+		completedPayment("Not in any span");
+		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString())
+						.contentType(MediaType.APPLICATION_JSON).content("""
+						{ "sourceAccountId": "ACC-99999", "destinationAccountId": "ACC-20001", "amount": 250.00,
+						  "currency": "EUR", "reference": "Not in any span either" }
+						""").with(customer()))
+				.andExpect(status().isBadRequest());
+
+		assertThat(spans.getFinishedSpanItems()).isNotEmpty().allSatisfy(span ->
+				assertThat(span.getName() + span.getAttributes() + span.getEvents())
+						.doesNotContain("ACC-10001", "ACC-20001", "ACC-99999", "CUST-1001", "Not in any span"));
+	}
+
+	// Both IDs in every line: correlationId for the caller and support, traceId to open the trace in Tempo.
+	@Test
+	@ExtendWith(OutputCaptureExtension.class)
+	void aLogLineInsideARequestCarriesTheTraceId(CapturedOutput output) throws Exception {
+		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString())
+						.header("X-Correlation-Id", "corr-bonus-05").contentType(MediaType.APPLICATION_JSON)
+						.content(paymentWithReference("Logged")).with(customer()))
+				.andExpect(status().isCreated());
+
+		String line = output.getOut().lines().filter(l -> l.contains("\"correlationId\":\"corr-bonus-05\""))
+				.findFirst().orElseThrow();
+		String traceId = JsonPath.read(line, "$.traceId");
+		assertThat((String) JsonPath.read(line, "$.spanId")).matches("[0-9a-f]{16}");
+		assertThat(spansOf(traceId)).extracting(SpanData::getName).contains("http post /payments");
+	}
+
 	private ResultActions refund(String paymentId, String amount, RequestPostProcessor caller) throws Exception {
 		return mockMvc.perform(post("/payments/{id}/refunds", paymentId).header("Idempotency-Key", UUID.randomUUID().toString())
 				.contentType(MediaType.APPLICATION_JSON).content("{ \"amount\": %s, \"currency\": \"EUR\" }".formatted(amount))
@@ -725,6 +831,17 @@ class PaymentEndToEndTest {
 			});
 		}
 		return received;
+	}
+
+	// The server span of POST /payments/{id}/execute for this payment: its trace is the payment's execution.
+	private SpanData executeRequestSpan(String paymentId) {
+		return await().until(() -> spans.getFinishedSpanItems().stream()
+				.filter(span -> ("/payments/" + paymentId + "/execute").equals(span.getAttributes().get(stringKey("http.url"))))
+				.findFirst(), Optional::isPresent).orElseThrow();
+	}
+
+	private List<SpanData> spansOf(String traceId) {
+		return spans.getFinishedSpanItems().stream().filter(span -> span.getTraceId().equals(traceId)).toList();
 	}
 
 	private static RequestPostProcessor customer() {

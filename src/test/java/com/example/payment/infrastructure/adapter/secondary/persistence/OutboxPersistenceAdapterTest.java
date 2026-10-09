@@ -10,10 +10,14 @@ import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
 import com.example.payment.domain.valueobject.PaymentStatus;
 import com.example.payment.infrastructure.adapter.secondary.persistence.OutboxPersistenceAdapter.Pending;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
@@ -35,6 +39,21 @@ class OutboxPersistenceAdapterTest {
 
 	@Autowired
 	TestEntityManager entityManager;
+
+	// Outside any trace: the end-to-end test follows the trace context through the table.
+	@TestConfiguration
+	static class NoTracing {
+
+		@Bean
+		Tracer tracer() {
+			return Tracer.NOOP;
+		}
+
+		@Bean
+		Propagator propagator() {
+			return Propagator.NOOP;
+		}
+	}
 
 	@Test
 	void unpublishedEventsComeBackInOrderAsTheyWereRecorded() {

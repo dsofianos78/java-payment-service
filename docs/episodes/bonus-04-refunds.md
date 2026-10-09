@@ -1,6 +1,6 @@
 # Bonus Episode 04 — Refunds
 
-Git tag: `bonus-04-refunds` · Builds on: [Bonus Episode 03 — Payment Events](bonus-03-payment-events.md)
+Git tag: `bonus-04-refunds` · Builds on: [Bonus Episode 03 — Payment Events](bonus-03-payment-events.md) · Next: [Bonus Episode 05 — Distributed Tracing](bonus-05-distributed-tracing.md)
 
 ## Goal
 

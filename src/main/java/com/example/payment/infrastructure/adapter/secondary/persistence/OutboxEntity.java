@@ -11,7 +11,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** One row per event. Inserted with the status change; only published_at is ever updated. */
+/**
+ * One row per event. Inserted with the status change; only published_at is ever updated.
+ * trace_context is not part of the event: it is the trace the change happened in (docs/episodes/bonus-05).
+ */
 @Entity
 @Table(name = "payment_outbox")
 class OutboxEntity {
@@ -50,12 +53,15 @@ class OutboxEntity {
 	@Column(name = "published_at")
 	private Instant publishedAt;
 
+	@Column(name = "trace_context", length = 55)
+	private String traceContext;
+
 	protected OutboxEntity() {
 		// for JPA
 	}
 
 	OutboxEntity(UUID eventId, String eventType, UUID paymentId, UUID refundId, String sourceAccountId,
-			String destinationAccountId, BigDecimal amount, String currency, Instant occurredAt) {
+			String destinationAccountId, BigDecimal amount, String currency, Instant occurredAt, String traceContext) {
 		this.eventId = eventId;
 		this.eventType = eventType;
 		this.paymentId = paymentId;
@@ -65,6 +71,7 @@ class OutboxEntity {
 		this.amount = amount;
 		this.currency = currency;
 		this.occurredAt = occurredAt;
+		this.traceContext = traceContext;
 	}
 
 	Long getId() {
@@ -105,5 +112,9 @@ class OutboxEntity {
 
 	Instant getOccurredAt() {
 		return occurredAt;
+	}
+
+	String getTraceContext() {
+		return traceContext;
 	}
 }

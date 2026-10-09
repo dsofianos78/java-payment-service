@@ -48,6 +48,12 @@ class ArchitectureTest {
 			.that().resideInAnyPackage(DOMAIN, "com.example.payment.application..")
 			.should().dependOnClassesThat().resideInAPackage("org.springframework.security..");
 
+	// Tracing is infrastructure too: Spring traces the adapters, and the core never sees a Tracer or a Span (docs/episodes/bonus-05).
+	@ArchTest
+	static final ArchRule coreDoesNotDependOnTracing = noClasses()
+			.that().resideInAnyPackage(DOMAIN, "com.example.payment.application..")
+			.should().dependOnClassesThat().resideInAnyPackage("io.micrometer.tracing..", "io.opentelemetry..");
+
 	@ArchTest
 	static final ArchRule domainDoesNotUsePersistenceEntities = noClasses()
 			.that().resideInAPackage(DOMAIN)

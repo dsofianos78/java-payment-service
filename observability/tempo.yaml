@@ -1,0 +1,19 @@
+# Grafana Tempo for local use: receives spans over OTLP/HTTP on 4318, keeps them on the container's disk,
+# answers Grafana on 3200. No retention tuning: the default, and a restart loses nothing but local traces.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal

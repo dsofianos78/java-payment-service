@@ -11,6 +11,8 @@ import com.example.payment.domain.valueobject.PaymentStatus;
 import com.example.payment.infrastructure.adapter.secondary.persistence.OutboxPersistenceAdapter;
 import com.example.payment.infrastructure.adapter.secondary.persistence.OutboxPersistenceAdapter.Pending;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.tracing.Tracer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -35,11 +37,17 @@ class PaymentEventRelayTest {
 	@SuppressWarnings("unchecked")
 	private final KafkaTemplate<String, PaymentEventMessage> kafka = mock(KafkaTemplate.class);
 	private final OutboxPersistenceAdapter outbox = mock(OutboxPersistenceAdapter.class);
-	private final PaymentEventRelay relay = new PaymentEventRelay(outbox, kafka, 100, new SimpleMeterRegistry());
+	private final PaymentEventRelay relay = new PaymentEventRelay(outbox, kafka, 100, new SimpleMeterRegistry(), Tracer.NOOP);
 
 	private final Pending first = pending(1);
 	private final Pending second = pending(2);
 	private final Pending third = pending(3);
+
+	// Tracing is the end-to-end test's subject; here every send is in no trace at all.
+	@BeforeEach
+	void noTrace() {
+		when(outbox.spanFor(any())).thenAnswer(invocation -> Tracer.NOOP.spanBuilder());
+	}
 
 	@Test
 	void sendsInOrderAndMarksEachPublishedAfterTheAck() {
@@ -80,6 +88,6 @@ class PaymentEventRelayTest {
 		Payment payment = Payment.restore(PaymentId.newId(), new AccountId("ACC-1"), new AccountId("ACC-2"),
 				new Money(new BigDecimal("250.00"), Currency.EUR), new PaymentReference("Invoice 12345"),
 				PaymentStatus.COMPLETED);
-		return new Pending(position, PaymentEvent.finalStatusReached(payment, Instant.now()));
+		return new Pending(position, PaymentEvent.finalStatusReached(payment, Instant.now()), null);
 	}
 }
