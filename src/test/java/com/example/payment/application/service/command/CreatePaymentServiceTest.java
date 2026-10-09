@@ -24,6 +24,7 @@ import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -84,6 +85,11 @@ class CreatePaymentServiceTest {
 		@Override
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return saved.stream().filter(p -> p.id().equals(paymentId)).findFirst();
+		}
+
+		@Override
+		public List<Payment> findProcessingSince(Instant before) {
+			throw new AssertionError("only reconciliation looks for stuck payments");
 		}
 	}, idempotency, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 
@@ -278,6 +284,11 @@ class CreatePaymentServiceTest {
 					@Override
 					public Optional<Payment> findById(PaymentId paymentId) {
 						return saved.stream().filter(p -> p.id().equals(paymentId)).findFirst();
+					}
+
+					@Override
+					public List<Payment> findProcessingSince(Instant before) {
+						throw new AssertionError("only reconciliation looks for stuck payments");
 					}
 				}, racingPort, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 	}

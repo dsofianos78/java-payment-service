@@ -13,4 +13,7 @@ public interface PaymentMetricsPort {
 	void statusChanged(PaymentStatus status);
 
 	void executionTook(Duration duration);
+
+	/** What reconciliation learned about a stuck payment: the payment system's answer, or none (UNKNOWN). */
+	void reconciled(PaymentExecutionPort.Outcome result);
 }

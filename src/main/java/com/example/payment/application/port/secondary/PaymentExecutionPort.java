@@ -10,6 +10,12 @@ public interface PaymentExecutionPort {
 
 	Outcome execute(Payment payment);
 
+	/**
+	 * Asks the payment system what became of a payment it may have received.
+	 * A question, not an instruction: asking twice moves no money.
+	 */
+	Outcome findOutcome(Payment payment);
+
 	enum Outcome {
 		/** The money moved. */
 		EXECUTED,
@@ -19,6 +25,8 @@ public interface PaymentExecutionPort {
 		 * No answer: a timeout, a dropped connection, an error. The payment
 		 * may or may not have gone through; only the payment system knows.
 		 */
-		UNKNOWN
+		UNKNOWN,
+		/** Only from findOutcome: the payment system never received the payment, so no money moved. */
+		NOT_RECEIVED
 	}
 }

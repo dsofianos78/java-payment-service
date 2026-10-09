@@ -1,6 +1,6 @@
 # Bonus Episode 01 — Security
 
-Git tag: `bonus-01-security` · Builds on: [Episode 20 — Final Architecture Review](20-final-review.md)
+Git tag: `bonus-01-security` · Builds on: [Episode 20 — Final Architecture Review](20-final-review.md) · Next: [Bonus Episode 02 — Reconciliation](bonus-02-reconciliation.md)
 
 ## Goal
 

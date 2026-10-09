@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -56,6 +57,11 @@ class CancelPaymentServiceTest {
 		@Override
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return Optional.of(stored).filter(p -> p.id().equals(paymentId));
+		}
+
+		@Override
+		public List<Payment> findProcessingSince(Instant before) {
+			throw new AssertionError("only reconciliation looks for stuck payments");
 		}
 	}, new AccountStateValidator(accountId -> Optional.of(new Account(AccountStatus.ACTIVE, "CUST-1"))
 			.filter(account -> accountId.value().equals("ACC-1"))), // CUST-1 holds ACC-1, the payment's source

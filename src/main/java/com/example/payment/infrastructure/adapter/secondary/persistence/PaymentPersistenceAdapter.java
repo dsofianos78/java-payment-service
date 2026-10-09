@@ -6,6 +6,8 @@ import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentStatus;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -24,16 +26,24 @@ public class PaymentPersistenceAdapter implements PaymentRepository {
 	// ponytail: the id is assigned by the domain, so save() does SELECT then INSERT; implement Persistable if that query matters
 	@Override
 	public void save(Payment payment) {
-		jpaRepository.save(PaymentEntityMapper.toEntity(payment));
+		jpaRepository.save(PaymentEntityMapper.toEntity(payment, Instant.now()));
 	}
 
 	@Override
 	public boolean updateStatus(Payment payment, PaymentStatus expected) {
-		return jpaRepository.updateStatus(payment.id().value(), expected.name(), payment.status().name()) == 1;
+		return jpaRepository.updateStatus(payment.id().value(), expected.name(), payment.status().name(),
+				Instant.now()) == 1;
 	}
 
 	@Override
 	public Optional<Payment> findById(PaymentId paymentId) {
 		return jpaRepository.findById(paymentId.value()).map(PaymentEntityMapper::toDomain);
+	}
+
+	@Override
+	public List<Payment> findProcessingSince(Instant before) {
+		return jpaRepository.findByStatusAndStatusChangedAtLessThanEqual(PaymentStatus.PROCESSING.name(), before).stream()
+				.map(PaymentEntityMapper::toDomain)
+				.toList();
 	}
 }

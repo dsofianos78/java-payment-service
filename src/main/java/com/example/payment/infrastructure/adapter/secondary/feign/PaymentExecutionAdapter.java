@@ -70,4 +70,33 @@ class PaymentExecutionAdapter implements PaymentExecutionPort {
 			}
 		};
 	}
+
+	// No Retry here either, though asking is safe: reconciliation asks again on its next run anyway.
+	@Override
+	public Outcome findOutcome(Payment payment) {
+		String status;
+		try {
+			status = circuitBreaker.executeSupplier(() -> paymentExecutionClient.find(payment.id().toString())).status();
+		}
+		// A clear answer: they have no order with this key. Not counted by the breaker, which only records no-answers.
+		catch (FeignException.NotFound e) {
+			return Outcome.NOT_RECEIVED;
+		}
+		catch (FeignException e) {
+			log.warn("Payment system gave no answer about payment {} (status {})", payment.id(), e.status());
+			paymentMetrics.paymentSystemError("reconciliation");
+			return Outcome.UNKNOWN;
+		}
+		catch (CallNotPermittedException e) {
+			return Outcome.UNKNOWN;
+		}
+		return switch (status) {
+			case "SETTLED" -> Outcome.EXECUTED;
+			case "REJECTED" -> Outcome.REJECTED;
+			case null, default -> {
+				log.warn("Unknown status from payment system for payment {}: {}", payment.id(), status);
+				yield Outcome.UNKNOWN;
+			}
+		};
+	}
 }

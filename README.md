@@ -54,6 +54,7 @@ first, and build on it in order.
 | 20 | [Final Architecture Review](docs/episodes/20-final-review.md) | `episode-20-final-review` |
 | | **Bonus episodes** | |
 | B1 | [Security](docs/episodes/bonus-01-security.md) | `bonus-01-security` |
+| B2 | [Reconciliation](docs/episodes/bonus-02-reconciliation.md) | `bonus-02-reconciliation` |
 
 ## License
 

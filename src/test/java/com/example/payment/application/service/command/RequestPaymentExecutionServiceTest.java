@@ -19,6 +19,7 @@ import com.example.payment.domain.valueobject.PaymentStatus;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -48,6 +49,11 @@ class RequestPaymentExecutionServiceTest {
 		@Override
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return Optional.of(stored).filter(p -> p.id().equals(paymentId));
+		}
+
+		@Override
+		public List<Payment> findProcessingSince(Instant before) {
+			throw new AssertionError("only reconciliation looks for stuck payments");
 		}
 	};
 

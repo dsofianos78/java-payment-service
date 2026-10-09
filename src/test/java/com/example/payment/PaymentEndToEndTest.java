@@ -87,6 +87,8 @@ class PaymentEndToEndTest {
 		registry.add("payment-system.url", externalSystems::baseUrl);
 		// The TIMEOUT mapping answers after 7s; no need to wait the real 5s to give up.
 		registry.add("spring.cloud.openfeign.client.config.payment-system.read-timeout", () -> "300");
+		// Reconciliation runs often here; with the 2m threshold it only finds payments a test has backdated.
+		registry.add("payment.reconciliation.interval", () -> "200ms");
 	}
 
 	@Autowired
@@ -331,6 +333,25 @@ class PaymentEndToEndTest {
 		});
 		mockMvc.perform(post("/payments/{id}/execute", paymentId).with(customer()))
 				.andExpect(status().isConflict());
+	}
+
+	// The payment system settled it after we stopped listening. A run of the scheduler asks, and the payment
+	// catches up with what really happened.
+	@Test
+	void reconciliationCompletesAPaymentWhoseAnswerWasLost() throws Exception {
+		String paymentId = createPayment("TIMEOUT reconciled later");
+		execute(paymentId);
+		awaitStatus(paymentId, "PROCESSING");
+
+		// Stuck for longer than the threshold, without the test waiting for it.
+		jdbc.sql("UPDATE payment SET status_changed_at = now() - interval '1 hour' WHERE id = ?::uuid").param(paymentId).update();
+
+		awaitStatus(paymentId, "COMPLETED");
+		externalSystems.verify(getRequestedFor(urlEqualTo("/payment-orders/" + paymentId)));
+		assertThat(jdbc.sql("SELECT count(*) FROM payment_audit WHERE payment_id = ?::uuid AND from_status = 'PROCESSING' AND to_status = 'COMPLETED'")
+				.param(paymentId).query(Integer.class).single()).isEqualTo(1);
+		// Asked, never sent again.
+		externalSystems.verify(1, postRequestedFor(urlEqualTo("/payment-orders")).withHeader("Idempotency-Key", equalTo(paymentId)));
 	}
 
 	// Kafka delivers at least once, so the same message twice is normal. The second finds the payment past

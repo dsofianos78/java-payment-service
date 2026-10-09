@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -37,12 +38,17 @@ class PaymentEntity {
 	@Column(nullable = false, length = 20)
 	private String status;
 
+	// Set by the persistence adapter on every status change. The domain has no use for it, so Payment doesn't hold it.
+	@Column(name = "status_changed_at", nullable = false)
+	private Instant statusChangedAt;
+
 	protected PaymentEntity() {
 		// for JPA
 	}
 
 	PaymentEntity(UUID id, String sourceAccountId, String destinationAccountId,
-			BigDecimal amount, String currency, String reference, String status) {
+			BigDecimal amount, String currency, String reference, String status,
+			Instant statusChangedAt) {
 		this.id = id;
 		this.sourceAccountId = sourceAccountId;
 		this.destinationAccountId = destinationAccountId;
@@ -50,6 +56,7 @@ class PaymentEntity {
 		this.currency = currency;
 		this.reference = reference;
 		this.status = status;
+		this.statusChangedAt = statusChangedAt;
 	}
 
 	UUID getId() {
@@ -78,5 +85,9 @@ class PaymentEntity {
 
 	String getStatus() {
 		return status;
+	}
+
+	Instant getStatusChangedAt() {
+		return statusChangedAt;
 	}
 }

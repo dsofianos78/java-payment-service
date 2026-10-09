@@ -5,6 +5,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /** Spring Data's view of the table. Only the persistence adapter uses it. */
@@ -14,6 +16,8 @@ interface PaymentJpaRepository extends JpaRepository<PaymentEntity, UUID> {
 	// the second re-checks the WHERE after the first commits and matches nothing.
 	@Modifying
 	@Transactional
-	@Query("UPDATE PaymentEntity p SET p.status = :to WHERE p.id = :id AND p.status = :from")
-	int updateStatus(UUID id, String from, String to);
+	@Query("UPDATE PaymentEntity p SET p.status = :to, p.statusChangedAt = :at WHERE p.id = :id AND p.status = :from")
+	int updateStatus(UUID id, String from, String to, Instant at);
+
+	List<PaymentEntity> findByStatusAndStatusChangedAtLessThanEqual(String status, Instant before);
 }

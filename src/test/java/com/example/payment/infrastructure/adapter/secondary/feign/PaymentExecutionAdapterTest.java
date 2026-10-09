@@ -32,6 +32,8 @@ import java.math.BigDecimal;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.notFound;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
@@ -133,6 +135,27 @@ class PaymentExecutionAdapterTest {
 
 		assertThat(adapter.execute(payment)).isEqualTo(Outcome.UNKNOWN);
 		paymentSystem.verify(0, postRequestedFor(urlEqualTo("/payment-orders")));
+	}
+
+	// Reconciliation's question, asked about the same payment ID execute sent as its Idempotency-Key.
+	@Test
+	void findsTheOutcomeOfAnOrderItSent() {
+		String order = "/payment-orders/" + payment.id();
+		paymentSystem.stubFor(get(order).willReturn(okJson("{ \"status\": \"SETTLED\" }")));
+		assertThat(adapter.findOutcome(payment)).isEqualTo(Outcome.EXECUTED);
+
+		paymentSystem.stubFor(get(order).willReturn(okJson("{ \"status\": \"REJECTED\" }")));
+		assertThat(adapter.findOutcome(payment)).isEqualTo(Outcome.REJECTED);
+
+		paymentSystem.stubFor(get(order).willReturn(notFound()));
+		assertThat(adapter.findOutcome(payment)).isEqualTo(Outcome.NOT_RECEIVED);
+	}
+
+	@Test
+	void noAnswerAboutAnOrderIsUnknown() {
+		paymentSystem.stubFor(get("/payment-orders/" + payment.id()).willReturn(aResponse().withStatus(503)));
+
+		assertThat(adapter.findOutcome(payment)).isEqualTo(Outcome.UNKNOWN);
 	}
 
 	private double executionErrors() {

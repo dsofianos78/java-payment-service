@@ -19,6 +19,26 @@
       "request": { "method": "POST", "url": "/payment-orders" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
         "jsonBody": { "status": "SETTLED" } }
+    },
+    {
+      "name": "Reconciliation: an order the payment system rejected",
+      "priority": 1,
+      "request": { "method": "GET", "url": "/payment-orders/00000000-0000-4000-8000-000000000422" },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "REJECTED", "reason": "Insufficient funds" } }
+    },
+    {
+      "name": "Reconciliation: an order the payment system never received",
+      "priority": 1,
+      "request": { "method": "GET", "url": "/payment-orders/00000000-0000-4000-8000-000000000404" },
+      "response": { "status": 404 }
+    },
+    {
+      "name": "Reconciliation: any other order settled, as the TIMEOUT one above did after its answer was lost",
+      "priority": 10,
+      "request": { "method": "GET", "urlPathPattern": "/payment-orders/[^/]+" },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "SETTLED" } }
     }
   ]
 }

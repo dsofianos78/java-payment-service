@@ -504,3 +504,10 @@ Content-Type: application/json
   "currency": "GBP",
   "reference": "Invoice B0103"
 }
+
+### Bonus 02 — the Episode 16 TIMEOUT payment, about 3 minutes after executing it -> 200 "COMPLETED": reconciliation asked the payment system
+GET {{baseUrl}}/payments/{{unknownOutcomePaymentId}}
+Authorization: Bearer {{token}}
+
+### Bonus 02 — reconciliation counters -> payments_reconciled_total{result="executed"}
+GET {{baseUrl}}/actuator/prometheus

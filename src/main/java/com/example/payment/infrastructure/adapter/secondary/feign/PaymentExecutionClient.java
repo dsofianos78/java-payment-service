@@ -1,6 +1,8 @@
 package com.example.payment.infrastructure.adapter.secondary.feign;
 
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -18,6 +20,10 @@ interface PaymentExecutionClient {
 	@PostMapping("/payment-orders")
 	PaymentOrderResponse submit(@RequestHeader("Idempotency-Key") String idempotencyKey,
 			@RequestBody PaymentOrderRequest request);
+
+	/** What became of the order sent with this Idempotency-Key. 404 if it never arrived. */
+	@GetMapping("/payment-orders/{idempotencyKey}")
+	PaymentOrderResponse find(@PathVariable String idempotencyKey);
 
 	record PaymentOrderRequest(String debtorAccount, String creditorAccount, BigDecimal amount, String currency,
 			String reference) {

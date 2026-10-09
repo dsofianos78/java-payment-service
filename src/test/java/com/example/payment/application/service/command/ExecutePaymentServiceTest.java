@@ -6,6 +6,7 @@ import com.example.payment.application.exception.PaymentLimitExceededException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
 import com.example.payment.application.port.secondary.AuditPort;
+import com.example.payment.application.port.secondary.PaymentExecutionPort;
 import com.example.payment.application.port.secondary.PaymentExecutionPort.Outcome;
 import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.application.port.secondary.PaymentRepository;
@@ -21,10 +22,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
@@ -64,6 +67,11 @@ class ExecutePaymentServiceTest {
 		@Override
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return Optional.of(stored).filter(p -> p.id().equals(paymentId));
+		}
+
+		@Override
+		public List<Payment> findProcessingSince(Instant before) {
+			throw new AssertionError("only reconciliation looks for stuck payments");
 		}
 	};
 
@@ -154,7 +162,12 @@ class ExecutePaymentServiceTest {
 			public Optional<Payment> findById(PaymentId paymentId) {
 				return Optional.of(authorizedEarlier);
 			}
-		}, this::authorize, payment -> true, payment -> Outcome.EXECUTED, audit, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
+
+			@Override
+			public List<Payment> findProcessingSince(Instant before) {
+				throw new AssertionError("only reconciliation looks for stuck payments");
+			}
+		}, this::authorize, payment -> true, executing(payment -> Outcome.EXECUTED), audit, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 
 		assertThat(service.executePayment(command(stored.id())).status()).isEqualTo(PaymentStatus.COMPLETED);
 		assertThat(authorizationRequests).isZero();
@@ -190,10 +203,25 @@ class ExecutePaymentServiceTest {
 	}
 
 	private ExecutePaymentService serviceAnswering(Outcome outcome) {
-		return new ExecutePaymentService(repository, this::authorize, payment -> withinLimit, payment -> {
+		return new ExecutePaymentService(repository, this::authorize, payment -> withinLimit, executing(payment -> {
 			statusWhenSent.add(payment.status());
 			return outcome;
-		}, audit, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
+		}), audit, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
+	}
+
+	// Execute only sends; asking about a stuck payment is reconciliation's job.
+	private static PaymentExecutionPort executing(Function<Payment, Outcome> answer) {
+		return new PaymentExecutionPort() {
+			@Override
+			public Outcome execute(Payment payment) {
+				return answer.apply(payment);
+			}
+
+			@Override
+			public Outcome findOutcome(Payment payment) {
+				throw new AssertionError("execute never asks about an outcome");
+			}
+		};
 	}
 
 	private boolean authorize(Payment payment) {

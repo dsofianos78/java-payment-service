@@ -15,6 +15,7 @@ import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -77,6 +78,23 @@ class PaymentPersistenceAdapterTest {
 
 		entityManager.clear();
 		assertThat(adapter.findById(payment.id()).orElseThrow().status()).isEqualTo(PaymentStatus.AUTHORIZED);
+	}
+
+	@Test
+	void findsPaymentsProcessingSinceBeforeTheGivenTime() {
+		Payment payment = Payment.create(new AccountId("ACC-10001"), new AccountId("ACC-20001"),
+				new Money(new BigDecimal("250.00"), Currency.EUR), new PaymentReference("Invoice 12345"));
+		adapter.save(payment);
+		payment.authorize();
+		adapter.updateStatus(payment, PaymentStatus.CREATED);
+		payment.startProcessing();
+		Instant beforeProcessing = Instant.now();
+		adapter.updateStatus(payment, PaymentStatus.AUTHORIZED);
+		entityManager.clear();
+
+		// The status change stamped the row: it is not stuck as of a moment before it, and is as of now.
+		assertThat(adapter.findProcessingSince(beforeProcessing)).isEmpty();
+		assertThat(adapter.findProcessingSince(Instant.now())).extracting(Payment::id).contains(payment.id());
 	}
 
 	@Test
