@@ -1,6 +1,6 @@
 # Bonus Episode 03 — Payment Events (Transactional Outbox)
 
-Git tag: `bonus-03-payment-events` · Builds on: [Bonus Episode 02 — Reconciliation](bonus-02-reconciliation.md)
+Git tag: `bonus-03-payment-events` · Builds on: [Bonus Episode 02 — Reconciliation](bonus-02-reconciliation.md) · Next: [Bonus Episode 04 — Refunds](bonus-04-refunds.md)
 
 ## Goal
 

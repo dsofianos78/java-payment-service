@@ -88,6 +88,11 @@ class CreatePaymentServiceTest {
 		}
 
 		@Override
+		public Optional<Payment> findByIdForUpdate(PaymentId paymentId) {
+			throw new AssertionError("only refunds lock a payment");
+		}
+
+		@Override
 		public List<Payment> findProcessingSince(Instant before) {
 			throw new AssertionError("only reconciliation looks for stuck payments");
 		}
@@ -284,6 +289,11 @@ class CreatePaymentServiceTest {
 					@Override
 					public Optional<Payment> findById(PaymentId paymentId) {
 						return saved.stream().filter(p -> p.id().equals(paymentId)).findFirst();
+					}
+
+					@Override
+					public Optional<Payment> findByIdForUpdate(PaymentId paymentId) {
+						throw new AssertionError("only refunds lock a payment");
 					}
 
 					@Override

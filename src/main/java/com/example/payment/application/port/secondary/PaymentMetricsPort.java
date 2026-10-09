@@ -1,6 +1,7 @@
 package com.example.payment.application.port.secondary;
 
 import com.example.payment.domain.valueobject.PaymentStatus;
+import com.example.payment.domain.valueobject.RefundStatus;
 
 import java.time.Duration;
 
@@ -16,4 +17,7 @@ public interface PaymentMetricsPort {
 
 	/** What reconciliation learned about a stuck payment: the payment system's answer, or none (UNKNOWN). */
 	void reconciled(PaymentExecutionPort.Outcome result);
+
+	/** A refund reached a final status. How many, never how much. */
+	void refundFinished(RefundStatus status);
 }

@@ -3,6 +3,8 @@ package com.example.payment.infrastructure.adapter.secondary.persistence;
 import com.example.payment.application.port.secondary.AuditPort;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentStatus;
+import com.example.payment.domain.valueobject.RefundId;
+import com.example.payment.domain.valueobject.RefundStatus;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -24,5 +26,10 @@ public class AuditPersistenceAdapter implements AuditPort {
 	@Override
 	public void recordTransition(PaymentId paymentId, PaymentStatus from, PaymentStatus to) {
 		jpaRepository.save(new AuditEntity(paymentId.value(), from.name(), to.name(), Instant.now()));
+	}
+
+	@Override
+	public void recordRefundTransition(RefundId refundId, RefundStatus from, RefundStatus to) {
+		jpaRepository.insertRefundTransition(refundId.value(), from == null ? null : from.name(), to.name(), Instant.now());
 	}
 }

@@ -29,6 +29,9 @@ class OutboxEntity {
 	@Column(name = "payment_id", nullable = false)
 	private UUID paymentId;
 
+	@Column(name = "refund_id")
+	private UUID refundId;
+
 	@Column(name = "source_account_id", nullable = false)
 	private String sourceAccountId;
 
@@ -51,11 +54,12 @@ class OutboxEntity {
 		// for JPA
 	}
 
-	OutboxEntity(UUID eventId, String eventType, UUID paymentId, String sourceAccountId, String destinationAccountId,
-			BigDecimal amount, String currency, Instant occurredAt) {
+	OutboxEntity(UUID eventId, String eventType, UUID paymentId, UUID refundId, String sourceAccountId,
+			String destinationAccountId, BigDecimal amount, String currency, Instant occurredAt) {
 		this.eventId = eventId;
 		this.eventType = eventType;
 		this.paymentId = paymentId;
+		this.refundId = refundId;
 		this.sourceAccountId = sourceAccountId;
 		this.destinationAccountId = destinationAccountId;
 		this.amount = amount;
@@ -77,6 +81,10 @@ class OutboxEntity {
 
 	UUID getPaymentId() {
 		return paymentId;
+	}
+
+	UUID getRefundId() {
+		return refundId;
 	}
 
 	String getSourceAccountId() {

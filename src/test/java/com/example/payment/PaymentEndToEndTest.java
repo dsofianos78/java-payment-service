@@ -372,28 +372,79 @@ class PaymentEndToEndTest {
 		execute(paymentId);
 		awaitStatus(paymentId, "COMPLETED");
 
-		Properties asText = new Properties();
-		asText.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-		asText.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-		List<String> received = new ArrayList<>();
-		try (Consumer<?, ?> consumer = consumerFactory.createConsumer("events-test-" + UUID.randomUUID(), null, null, asText)) {
-			consumer.subscribe(List.of("payment-events"));
-			await().during(Duration.ofMillis(500)).untilAsserted(() -> {
-				for (ConsumerRecord<?, ?> record : consumer.poll(Duration.ofMillis(100))) {
-					if (paymentId.equals(record.key())) {
-						received.add((String) record.value());
-					}
-				}
-				assertThat(received).hasSize(1);
-			});
-		}
-
-		String message = received.getFirst();
+		String message = paymentEvents(paymentId, 1).getFirst();
 		assertThat((String) JsonPath.read(message, "$.type")).isEqualTo("PAYMENT_COMPLETED");
 		assertThat((String) JsonPath.read(message, "$.paymentId")).isEqualTo(paymentId);
 		assertThat((String) JsonPath.read(message, "$.eventId")).isEqualTo(jdbc.sql(
 				"SELECT event_id::text FROM payment_outbox WHERE payment_id = ?::uuid").param(paymentId).query(String.class).single());
 		assertThat((String) JsonPath.read(message, "$.currency")).isEqualTo("EUR");
+	}
+
+	// A full refund in parts: 100, then the 150 left. One cent more is refused, and nothing was sent for it.
+	@Test
+	void refundsACompletedPaymentFullyInParts() throws Exception {
+		String paymentId = completedPayment("Refunded in parts");
+
+		refund(paymentId, "100.00", customer())
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.paymentId").value(paymentId))
+				.andExpect(jsonPath("$.amount").value(100.00))
+				.andExpect(jsonPath("$.status").value("COMPLETED"));
+		refund(paymentId, "150.00", customer()).andExpect(status().isCreated());
+		refund(paymentId, "0.01", customer())
+				.andExpect(status().isUnprocessableContent())
+				.andExpect(jsonPath("$.detail").value("Refund of 0.01 exceeds the 0.00 EUR left to refund on payment " + paymentId));
+
+		mockMvc.perform(get("/payments/{id}/refunds", paymentId).with(customer()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(2))
+				.andExpect(jsonPath("$[0].amount").value(100.00))
+				.andExpect(jsonPath("$[1].amount").value(150.00));
+		externalSystems.verify(2, postRequestedFor(urlEqualTo("/refund-orders"))
+				.withRequestBody(matchingJsonPath("$.originalPaymentId", equalTo(paymentId))));
+		// The payment itself is still COMPLETED: refunding is a new money movement, not a status of the payment.
+		assertThat(storedStatus(paymentId)).isEqualTo("COMPLETED");
+	}
+
+	@Test
+	void refundingAPaymentThatIsNotCompletedIs409() throws Exception {
+		String paymentId = createPayment("Not yet completed");
+
+		refund(paymentId, "50.00", customer()).andExpect(status().isConflict());
+
+		assertThat(jdbc.sql("SELECT count(*) FROM refund WHERE payment_id = ?::uuid").param(paymentId)
+				.query(Integer.class).single()).isZero();
+	}
+
+	@Test
+	void anotherCustomersPaymentCannotBeRefundedOrItsRefundsRead() throws Exception {
+		String paymentId = completedPayment("Someone else's refund");
+		String notFound = "Payment " + paymentId + " does not exist";
+
+		refund(paymentId, "50.00", otherCustomer())
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").value(notFound));
+		mockMvc.perform(get("/payments/{id}/refunds", paymentId).with(otherCustomer()))
+				.andExpect(status().isNotFound());
+
+		externalSystems.verify(0, postRequestedFor(urlEqualTo("/refund-orders"))
+				.withRequestBody(matchingJsonPath("$.originalPaymentId", equalTo(paymentId))));
+	}
+
+	// The payment's event first, then the refund's, both keyed by the payment, so a consumer sees them in order.
+	@Test
+	void aCompletedRefundIsPublishedOnPaymentEvents() throws Exception {
+		String paymentId = completedPayment("Refund event");
+		String refundId = JsonPath.read(refund(paymentId, "40.00", customer()).andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString(), "$.refundId");
+
+		List<String> messages = paymentEvents(paymentId, 2);
+
+		assertThat(messages).extracting(m -> (String) JsonPath.read(m, "$.type"))
+				.containsExactly("PAYMENT_COMPLETED", "REFUND_COMPLETED");
+		String refunded = messages.get(1);
+		assertThat((String) JsonPath.read(refunded, "$.refundId")).isEqualTo(refundId);
+		assertThat((Double) JsonPath.read(refunded, "$.amount")).isEqualTo(40.00);
 	}
 
 	// Kafka delivers at least once, so the same message twice is normal. The second finds the payment past
@@ -641,6 +692,39 @@ class PaymentEndToEndTest {
 						containsString("payments_total{status=\"completed\"}"),
 						containsString("payment_execution_duration_seconds_count"),
 						containsString("resilience4j_circuitbreaker_state{name=\"payment-system\",state=\"closed\"} 1.0"))));
+	}
+
+	private ResultActions refund(String paymentId, String amount, RequestPostProcessor caller) throws Exception {
+		return mockMvc.perform(post("/payments/{id}/refunds", paymentId).header("Idempotency-Key", UUID.randomUUID().toString())
+				.contentType(MediaType.APPLICATION_JSON).content("{ \"amount\": %s, \"currency\": \"EUR\" }".formatted(amount))
+				.with(caller));
+	}
+
+	private String completedPayment(String reference) throws Exception {
+		String paymentId = createPayment(reference);
+		execute(paymentId);
+		awaitStatus(paymentId, "COMPLETED");
+		return paymentId;
+	}
+
+	// Everything on payment-events about this payment, as another service would read it, once exactly this many have arrived.
+	private List<String> paymentEvents(String paymentId, int expected) {
+		Properties asText = new Properties();
+		asText.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+		asText.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+		List<String> received = new ArrayList<>();
+		try (Consumer<?, ?> consumer = consumerFactory.createConsumer("events-test-" + UUID.randomUUID(), null, null, asText)) {
+			consumer.subscribe(List.of("payment-events"));
+			await().during(Duration.ofMillis(500)).untilAsserted(() -> {
+				for (ConsumerRecord<?, ?> record : consumer.poll(Duration.ofMillis(100))) {
+					if (paymentId.equals(record.key())) {
+						received.add((String) record.value());
+					}
+				}
+				assertThat(received).hasSize(expected);
+			});
+		}
+		return received;
 	}
 
 	private static RequestPostProcessor customer() {

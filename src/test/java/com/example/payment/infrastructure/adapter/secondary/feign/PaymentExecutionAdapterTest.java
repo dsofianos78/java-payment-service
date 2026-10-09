@@ -1,8 +1,10 @@
 package com.example.payment.infrastructure.adapter.secondary.feign;
 
 import com.example.payment.application.port.secondary.PaymentExecutionPort.Outcome;
+import com.example.payment.application.exception.ExternalSystemUnavailableException;
 import com.example.payment.config.FeignConfiguration;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.entity.Refund;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
@@ -40,6 +42,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * The real Feign client against a fake payment system over real HTTP. The
@@ -156,6 +159,43 @@ class PaymentExecutionAdapterTest {
 		paymentSystem.stubFor(get("/payment-orders/" + payment.id()).willReturn(aResponse().withStatus(503)));
 
 		assertThat(adapter.findOutcome(payment)).isEqualTo(Outcome.UNKNOWN);
+	}
+
+	// A refund is an instruction too, keyed by its own ID: the payment's key already belongs to the payment.
+	@Test
+	void sendsTheRefundWithItsIdAsIdempotencyKeyAndReadsSettled() {
+		Refund refund = Refund.create(payment.id(), new Money(new BigDecimal("50.00"), Currency.EUR));
+		paymentSystem.stubFor(post("/refund-orders")
+				.withHeader("Idempotency-Key", equalTo(refund.id().toString()))
+				.withRequestBody(equalToJson("""
+						{ "originalPaymentId": "%s", "amount": 50.00, "currency": "EUR" }
+						""".formatted(payment.id())))
+				.willReturn(okJson("{ \"status\": \"SETTLED\" }")));
+
+		assertThat(adapter.refund(refund)).isEqualTo(Outcome.EXECUTED);
+
+		paymentSystem.stubFor(post("/refund-orders").willReturn(okJson("{ \"status\": \"REJECTED\" }")));
+		assertThat(adapter.refund(refund)).isEqualTo(Outcome.REJECTED);
+	}
+
+	@Test
+	void aRefundTimeoutIsUnknownAndIsSentOnlyOnce() {
+		Refund refund = Refund.create(payment.id(), new Money(new BigDecimal("50.00"), Currency.EUR));
+		paymentSystem.stubFor(post("/refund-orders")
+				.willReturn(okJson("{ \"status\": \"SETTLED\" }").withFixedDelay(1000)));
+
+		assertThat(adapter.refund(refund)).isEqualTo(Outcome.UNKNOWN);
+		paymentSystem.verify(1, postRequestedFor(urlEqualTo("/refund-orders")));
+	}
+
+	// Certainly not sent, and the customer is waiting: say so (503) rather than leave it PROCESSING.
+	@Test
+	void anOpenCircuitSendsNoRefundAndSaysTheSystemIsUnavailable() {
+		circuitBreakers.circuitBreaker("payment-system").transitionToOpenState();
+		Refund refund = Refund.create(payment.id(), new Money(new BigDecimal("50.00"), Currency.EUR));
+
+		assertThatExceptionOfType(ExternalSystemUnavailableException.class).isThrownBy(() -> adapter.refund(refund));
+		paymentSystem.verify(0, postRequestedFor(urlEqualTo("/refund-orders")));
 	}
 
 	private double executionErrors() {

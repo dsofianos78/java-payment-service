@@ -20,6 +20,7 @@ import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
 import com.example.payment.domain.valueobject.PaymentStatus;
+import com.example.payment.domain.entity.Refund;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionOperations;
 
@@ -47,7 +48,7 @@ class ExecutePaymentServiceTest {
 	private boolean authorized = true;
 	private boolean withinLimit = true;
 	private final List<String> audited = new ArrayList<>();
-	private final AuditPort audit = (paymentId, from, to) -> audited.add(from + "->" + to);
+	private final AuditPort audit = AuditTrail.into(audited);
 	private final List<PaymentEvent> events = new ArrayList<>();
 	// What the stored status would be if another request had changed it after we read the payment.
 	private PaymentStatus changedByAnotherRequest;
@@ -70,6 +71,11 @@ class ExecutePaymentServiceTest {
 		@Override
 		public Optional<Payment> findById(PaymentId paymentId) {
 			return Optional.of(stored).filter(p -> p.id().equals(paymentId));
+		}
+
+		@Override
+		public Optional<Payment> findByIdForUpdate(PaymentId paymentId) {
+			throw new AssertionError("only refunds lock a payment");
 		}
 
 		@Override
@@ -176,6 +182,11 @@ class ExecutePaymentServiceTest {
 			}
 
 			@Override
+			public Optional<Payment> findByIdForUpdate(PaymentId paymentId) {
+				throw new AssertionError("only refunds lock a payment");
+			}
+
+			@Override
 			public List<Payment> findProcessingSince(Instant before) {
 				throw new AssertionError("only reconciliation looks for stuck payments");
 			}
@@ -227,6 +238,11 @@ class ExecutePaymentServiceTest {
 			@Override
 			public Outcome execute(Payment payment) {
 				return answer.apply(payment);
+			}
+
+			@Override
+			public Outcome refund(Refund refund) {
+				throw new AssertionError("no refunds here");
 			}
 
 			@Override

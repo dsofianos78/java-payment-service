@@ -41,6 +41,11 @@ public class PaymentPersistenceAdapter implements PaymentRepository {
 	}
 
 	@Override
+	public Optional<Payment> findByIdForUpdate(PaymentId paymentId) {
+		return jpaRepository.findByIdForUpdate(paymentId.value()).map(PaymentEntityMapper::toDomain);
+	}
+
+	@Override
 	public List<Payment> findProcessingSince(Instant before) {
 		return jpaRepository.findByStatusAndStatusChangedAtLessThanEqual(PaymentStatus.PROCESSING.name(), before).stream()
 				.map(PaymentEntityMapper::toDomain)

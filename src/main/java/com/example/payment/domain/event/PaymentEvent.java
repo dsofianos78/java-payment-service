@@ -1,9 +1,11 @@
 package com.example.payment.domain.event;
 
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.entity.Refund;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentId;
+import com.example.payment.domain.valueobject.RefundId;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -15,9 +17,12 @@ import java.util.UUID;
  *
  * {@code eventId} is unique per fact. Delivery is at least once, so a consumer
  * that sees the same eventId twice ignores the second.
+ *
+ * A refund event names the refund too ({@code refundId}, null for a payment's
+ * own events) and carries the refund's amount, not the payment's.
  */
-public record PaymentEvent(UUID eventId, PaymentEventType type, PaymentId paymentId, AccountId sourceAccountId,
-		AccountId destinationAccountId, Money amount, Instant occurredAt) {
+public record PaymentEvent(UUID eventId, PaymentEventType type, PaymentId paymentId, RefundId refundId,
+		AccountId sourceAccountId, AccountId destinationAccountId, Money amount, Instant occurredAt) {
 
 	public PaymentEvent {
 		Objects.requireNonNull(eventId, "Event id is required");
@@ -38,7 +43,22 @@ public record PaymentEvent(UUID eventId, PaymentEventType type, PaymentId paymen
 			case CREATED, AUTHORIZED, PROCESSING -> throw new IllegalStateException(
 					"Payment " + payment.id() + " is " + payment.status() + ", not final: no event");
 		};
-		return new PaymentEvent(UUID.randomUUID(), type, payment.id(), payment.sourceAccountId(),
+		return new PaymentEvent(UUID.randomUUID(), type, payment.id(), null, payment.sourceAccountId(),
 				payment.destinationAccountId(), payment.amount(), occurredAt);
+	}
+
+	/** The event for a refund of this payment that has just reached a final status. */
+	public static PaymentEvent refundFinished(Payment payment, Refund refund, Instant occurredAt) {
+		if (!refund.paymentId().equals(payment.id())) {
+			throw new IllegalArgumentException("Refund " + refund.id() + " is not a refund of payment " + payment.id());
+		}
+		PaymentEventType type = switch (refund.status()) {
+			case COMPLETED -> PaymentEventType.REFUND_COMPLETED;
+			case FAILED -> PaymentEventType.REFUND_FAILED;
+			case PROCESSING -> throw new IllegalStateException(
+					"Refund " + refund.id() + " is PROCESSING, not final: no event");
+		};
+		return new PaymentEvent(UUID.randomUUID(), type, payment.id(), refund.id(), payment.sourceAccountId(),
+				payment.destinationAccountId(), refund.amount(), occurredAt);
 	}
 }

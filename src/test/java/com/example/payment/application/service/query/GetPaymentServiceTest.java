@@ -49,6 +49,11 @@ class GetPaymentServiceTest {
 		}
 
 		@Override
+		public Optional<Payment> findByIdForUpdate(PaymentId paymentId) {
+			throw new AssertionError("only refunds lock a payment");
+		}
+
+		@Override
 		public List<Payment> findProcessingSince(Instant before) {
 			throw new AssertionError("only reconciliation looks for stuck payments");
 		}

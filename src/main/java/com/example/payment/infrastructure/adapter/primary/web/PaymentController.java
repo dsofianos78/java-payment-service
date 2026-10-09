@@ -3,10 +3,13 @@ package com.example.payment.infrastructure.adapter.primary.web;
 import com.example.payment.application.port.primary.CancelPaymentUseCase;
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
 import com.example.payment.application.port.primary.GetPaymentUseCase;
+import com.example.payment.application.port.primary.GetRefundsUseCase;
+import com.example.payment.application.port.primary.RefundPaymentUseCase;
 import com.example.payment.application.port.primary.RequestPaymentExecutionUseCase;
 import com.example.payment.application.usecase.command.CancelPaymentCommand;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
 import com.example.payment.application.usecase.query.GetPaymentQuery;
+import com.example.payment.application.usecase.query.GetRefundsQuery;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.Principal;
+import java.util.List;
 
 /**
  * Every endpoint here needs a valid token (config/SecurityConfiguration). The
@@ -35,13 +39,18 @@ public class PaymentController {
 	private final GetPaymentUseCase getPaymentUseCase;
 	private final RequestPaymentExecutionUseCase requestPaymentExecutionUseCase;
 	private final CancelPaymentUseCase cancelPaymentUseCase;
+	private final RefundPaymentUseCase refundPaymentUseCase;
+	private final GetRefundsUseCase getRefundsUseCase;
 
 	public PaymentController(CreatePaymentUseCase createPaymentUseCase, GetPaymentUseCase getPaymentUseCase,
-			RequestPaymentExecutionUseCase requestPaymentExecutionUseCase, CancelPaymentUseCase cancelPaymentUseCase) {
+			RequestPaymentExecutionUseCase requestPaymentExecutionUseCase, CancelPaymentUseCase cancelPaymentUseCase,
+			RefundPaymentUseCase refundPaymentUseCase, GetRefundsUseCase getRefundsUseCase) {
 		this.createPaymentUseCase = createPaymentUseCase;
 		this.getPaymentUseCase = getPaymentUseCase;
 		this.requestPaymentExecutionUseCase = requestPaymentExecutionUseCase;
 		this.cancelPaymentUseCase = cancelPaymentUseCase;
+		this.refundPaymentUseCase = refundPaymentUseCase;
+		this.getRefundsUseCase = getRefundsUseCase;
 	}
 
 	// A retry with the same Idempotency-Key gets the same payment back, still 201.
@@ -71,5 +80,23 @@ public class PaymentController {
 	@PostMapping("/{paymentId}/cancel")
 	public PaymentResponse cancel(@PathVariable String paymentId, Principal caller) {
 		return PaymentResponse.from(cancelPaymentUseCase.cancelPayment(new CancelPaymentCommand(paymentId, caller.getName())));
+	}
+
+	// 201 with the refund as it ended: COMPLETED, FAILED, or PROCESSING if the payment system's answer was lost.
+	// Synchronous, unlike execute: one external call, and the customer is waiting for it. A retry with the same
+	// Idempotency-Key gets the same refund back.
+	@PostMapping("/{paymentId}/refunds")
+	@ResponseStatus(HttpStatus.CREATED)
+	public RefundResponse refund(@PathVariable String paymentId, @Valid @RequestBody RefundRequest request,
+			@RequestHeader("Idempotency-Key") String idempotencyKey, Principal caller) {
+		return RefundResponse.from(refundPaymentUseCase.refundPayment(
+				request.toCommand(paymentId, caller.getName(), idempotencyKey)));
+	}
+
+	@GetMapping("/{paymentId}/refunds")
+	public List<RefundResponse> refunds(@PathVariable String paymentId, Principal caller) {
+		return getRefundsUseCase.getRefunds(new GetRefundsQuery(paymentId, caller.getName())).stream()
+				.map(RefundResponse::from)
+				.toList();
 	}
 }

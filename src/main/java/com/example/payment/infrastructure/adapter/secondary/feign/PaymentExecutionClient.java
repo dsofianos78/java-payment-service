@@ -25,8 +25,16 @@ interface PaymentExecutionClient {
 	@GetMapping("/payment-orders/{idempotencyKey}")
 	PaymentOrderResponse find(@PathVariable String idempotencyKey);
 
+	/** Sends money back for an order. Keyed by refund ID, so sending the same refund again can't refund twice. */
+	@PostMapping("/refund-orders")
+	PaymentOrderResponse refund(@RequestHeader("Idempotency-Key") String idempotencyKey,
+			@RequestBody RefundOrderRequest request);
+
 	record PaymentOrderRequest(String debtorAccount, String creditorAccount, BigDecimal amount, String currency,
 			String reference) {
+	}
+
+	record RefundOrderRequest(String originalPaymentId, BigDecimal amount, String currency) {
 	}
 
 	/** {@code status} is SETTLED or REJECTED. */

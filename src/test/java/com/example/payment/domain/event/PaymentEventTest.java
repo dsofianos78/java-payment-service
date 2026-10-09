@@ -1,6 +1,7 @@
 package com.example.payment.domain.event;
 
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.entity.Refund;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
@@ -51,6 +52,31 @@ class PaymentEventTest {
 	void aPaymentStillOnItsWayHasNoEvent(PaymentStatus status) {
 		assertThatIllegalStateException().isThrownBy(() -> PaymentEvent.finalStatusReached(payment(status), NOW))
 				.withMessageEndingWith("is " + status + ", not final: no event");
+	}
+
+	@Test
+	void aFinishedRefundHasItsEventWithTheRefundsAmount() {
+		Payment payment = payment(PaymentStatus.COMPLETED);
+		Refund refund = Refund.create(payment.id(), new Money(new BigDecimal("50.00"), Currency.EUR));
+		refund.complete();
+
+		PaymentEvent event = PaymentEvent.refundFinished(payment, refund, NOW);
+
+		assertThat(event.type()).isEqualTo(PaymentEventType.REFUND_COMPLETED);
+		assertThat(event.paymentId()).isEqualTo(payment.id());
+		assertThat(event.refundId()).isEqualTo(refund.id());
+		assertThat(event.amount()).isEqualTo(refund.amount());
+		assertThat(PaymentEvent.finalStatusReached(payment, NOW).refundId()).isNull();
+	}
+
+	@Test
+	void aRefundStillProcessingHasNoEvent() {
+		Payment payment = payment(PaymentStatus.COMPLETED);
+		Refund refund = Refund.create(payment.id(), new Money(new BigDecimal("50.00"), Currency.EUR));
+
+		assertThatIllegalStateException().isThrownBy(() -> PaymentEvent.refundFinished(payment, refund, NOW));
+		refund.fail();
+		assertThat(PaymentEvent.refundFinished(payment, refund, NOW).type()).isEqualTo(PaymentEventType.REFUND_FAILED);
 	}
 
 	private static Payment payment(PaymentStatus status) {

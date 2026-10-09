@@ -1,6 +1,7 @@
 package com.example.payment.application.port.secondary;
 
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.entity.Refund;
 
 /**
  * The system that actually moves the money. The application decides when a
@@ -16,8 +17,17 @@ public interface PaymentExecutionPort {
 	 */
 	Outcome findOutcome(Payment payment);
 
+	/**
+	 * Sends money back for a completed payment: an instruction, like execute, so a call without a clear
+	 * answer is UNKNOWN and is never repeated.
+	 *
+	 * @throws com.example.payment.application.exception.ExternalSystemUnavailableException if the refund was
+	 *         certainly not sent, e.g. the payment system is known to be down
+	 */
+	Outcome refund(Refund refund);
+
 	enum Outcome {
-		/** The money moved. */
+		/** The money moved (for a refund: went back). */
 		EXECUTED,
 		/** The payment system refused it, e.g. insufficient funds. */
 		REJECTED,

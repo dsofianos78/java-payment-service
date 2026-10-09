@@ -3,6 +3,7 @@ package com.example.payment.infrastructure.observability;
 import com.example.payment.application.port.secondary.PaymentExecutionPort;
 import com.example.payment.application.port.secondary.PaymentMetricsPort;
 import com.example.payment.domain.valueobject.PaymentStatus;
+import com.example.payment.domain.valueobject.RefundStatus;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -50,6 +51,11 @@ public class PaymentMetrics implements PaymentMetricsPort {
 	@Override
 	public void reconciled(PaymentExecutionPort.Outcome result) {
 		registry.counter("payments.reconciled", "result", result.name().toLowerCase()).increment();
+	}
+
+	@Override
+	public void refundFinished(RefundStatus status) {
+		registry.counter("refunds", "status", status.name().toLowerCase()).increment();
 	}
 
 	/** The account system gave no answer: 5xx, timeout, connection refused. */

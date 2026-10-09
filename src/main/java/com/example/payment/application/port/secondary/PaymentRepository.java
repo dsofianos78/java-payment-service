@@ -26,6 +26,12 @@ public interface PaymentRepository {
 	/** The payment, or empty if none has that id. */
 	Optional<Payment> findById(PaymentId paymentId);
 
+	/**
+	 * The payment, locked until the caller's transaction ends: another caller asking for the same lock waits.
+	 * Only inside a transaction, and never across an external call.
+	 */
+	Optional<Payment> findByIdForUpdate(PaymentId paymentId);
+
 	/** Payments that have been PROCESSING since {@code before} or earlier. */
 	List<Payment> findProcessingSince(Instant before);
 }

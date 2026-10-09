@@ -63,12 +63,17 @@ class CancelPaymentServiceTest {
 		}
 
 		@Override
+		public Optional<Payment> findByIdForUpdate(PaymentId paymentId) {
+			throw new AssertionError("only refunds lock a payment");
+		}
+
+		@Override
 		public List<Payment> findProcessingSince(Instant before) {
 			throw new AssertionError("only reconciliation looks for stuck payments");
 		}
 	}, new AccountStateValidator(accountId -> Optional.of(new Account(AccountStatus.ACTIVE, "CUST-1"))
 			.filter(account -> accountId.value().equals("ACC-1"))), // CUST-1 holds ACC-1, the payment's source
-			(paymentId, from, to) -> audited.add(from + "->" + to), events::add, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
+			AuditTrail.into(audited), events::add, mock(PaymentMetricsPort.class), TransactionOperations.withoutTransaction());
 
 	@Test
 	void cancelsAndStoresACreatedPayment() {

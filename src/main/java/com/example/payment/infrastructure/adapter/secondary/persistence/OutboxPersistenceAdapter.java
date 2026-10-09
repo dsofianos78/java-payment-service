@@ -7,6 +7,7 @@ import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentId;
+import com.example.payment.domain.valueobject.RefundId;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Component;
 
@@ -32,7 +33,8 @@ public class OutboxPersistenceAdapter implements PaymentEventPort {
 	@Override
 	public void record(PaymentEvent event) {
 		jpaRepository.save(new OutboxEntity(event.eventId(), event.type().name(), event.paymentId().value(),
-				event.sourceAccountId().value(), event.destinationAccountId().value(), event.amount().amount(),
+				event.refundId() == null ? null : event.refundId().value(), event.sourceAccountId().value(),
+				event.destinationAccountId().value(), event.amount().amount(),
 				event.amount().currency().name(), event.occurredAt()));
 	}
 
@@ -41,6 +43,7 @@ public class OutboxPersistenceAdapter implements PaymentEventPort {
 		return jpaRepository.findByPublishedAtIsNullOrderByIdAsc(Limit.of(max)).stream()
 				.map(row -> new Pending(row.getId(), new PaymentEvent(row.getEventId(),
 						PaymentEventType.valueOf(row.getEventType()), new PaymentId(row.getPaymentId()),
+						row.getRefundId() == null ? null : new RefundId(row.getRefundId()),
 						new AccountId(row.getSourceAccountId()), new AccountId(row.getDestinationAccountId()),
 						new Money(row.getAmount(), Currency.of(row.getCurrency())), row.getOccurredAt())))
 				.toList();

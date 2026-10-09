@@ -514,3 +514,57 @@ GET {{baseUrl}}/actuator/prometheus
 
 ### Bonus 03 — events waiting for the relay -> payment_events_pending 0.0 (1.0 or more while Kafka is stopped)
 GET {{baseUrl}}/actuator/prometheus
+
+### Bonus 04 — a COMPLETED payment to refund: paste the paymentId of an executed payment (Episode 09)
+@refundPaymentId = 00000000-0000-0000-0000-000000000000
+
+### Bonus 04 — refund part of it -> 201 "COMPLETED"
+POST {{baseUrl}}/payments/{{refundPaymentId}}/refunds
+Authorization: Bearer {{token}}
+Idempotency-Key: bonus-04-demo-refund-1
+Content-Type: application/json
+
+{ "amount": 100.00, "currency": "EUR" }
+
+### Bonus 04 — the same request again -> 201, the same refundId: nothing is sent twice
+POST {{baseUrl}}/payments/{{refundPaymentId}}/refunds
+Authorization: Bearer {{token}}
+Idempotency-Key: bonus-04-demo-refund-1
+Content-Type: application/json
+
+{ "amount": 100.00, "currency": "EUR" }
+
+### Bonus 04 — the rest -> 201 "COMPLETED"
+POST {{baseUrl}}/payments/{{refundPaymentId}}/refunds
+Authorization: Bearer {{token}}
+Idempotency-Key: bonus-04-demo-refund-2
+Content-Type: application/json
+
+{ "amount": 150.00, "currency": "EUR" }
+
+### Bonus 04 — one cent more -> 422 "exceeds the 0.00 EUR left to refund"
+POST {{baseUrl}}/payments/{{refundPaymentId}}/refunds
+Authorization: Bearer {{token}}
+Idempotency-Key: bonus-04-demo-refund-3
+Content-Type: application/json
+
+{ "amount": 0.01, "currency": "EUR" }
+
+### Bonus 04 — its refunds -> 200, two refunds, oldest first
+GET {{baseUrl}}/payments/{{refundPaymentId}}/refunds
+Authorization: Bearer {{token}}
+
+### Bonus 04 — CUST-2002 tries -> 404: not their payment
+GET {{baseUrl}}/payments/{{refundPaymentId}}/refunds
+Authorization: Bearer {{otherToken}}
+
+### Bonus 04 — on a fresh COMPLETED payment, 13.13 the stub payment system rejects -> 201 "FAILED"
+POST {{baseUrl}}/payments/{{executePaymentId}}/refunds
+Authorization: Bearer {{token}}
+Idempotency-Key: bonus-04-demo-refund-4
+Content-Type: application/json
+
+{ "amount": 13.13, "currency": "EUR" }
+
+### Bonus 04 — refund counters -> refunds_total{status="completed"}
+GET {{baseUrl}}/actuator/prometheus

@@ -124,7 +124,7 @@ public class CreatePaymentService implements CreatePaymentUseCase {
 				payment.reference().value());
 	}
 
-	private static String sha256(String... parts) {
+	static String sha256(String... parts) {
 		String canonical = String.join("\u001F", parts);
 		try {
 			byte[] hash = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));

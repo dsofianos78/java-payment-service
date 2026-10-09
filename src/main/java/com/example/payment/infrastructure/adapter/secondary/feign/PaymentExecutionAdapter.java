@@ -1,8 +1,11 @@
 package com.example.payment.infrastructure.adapter.secondary.feign;
 
+import com.example.payment.application.exception.ExternalSystemUnavailableException;
 import com.example.payment.application.port.secondary.PaymentExecutionPort;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.entity.Refund;
 import com.example.payment.infrastructure.adapter.secondary.feign.PaymentExecutionClient.PaymentOrderRequest;
+import com.example.payment.infrastructure.adapter.secondary.feign.PaymentExecutionClient.RefundOrderRequest;
 import com.example.payment.infrastructure.observability.PaymentMetrics;
 import feign.FeignException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
@@ -66,6 +69,35 @@ class PaymentExecutionAdapter implements PaymentExecutionPort {
 			// Not fail-closed like the other adapters: the money may have moved, so "no" would be a guess too.
 			case null, default -> {
 				log.warn("Unknown status from payment system for payment {}: {}", payment.id(), status);
+				yield Outcome.UNKNOWN;
+			}
+		};
+	}
+
+	// An instruction like execute: no Retry, and no clear answer is UNKNOWN.
+	@Override
+	public Outcome refund(Refund refund) {
+		RefundOrderRequest request = new RefundOrderRequest(refund.paymentId().toString(), refund.amount().amount(),
+				refund.amount().currency().name());
+		String status;
+		try {
+			status = circuitBreaker.executeSupplier(
+					() -> paymentExecutionClient.refund(refund.id().toString(), request)).status();
+		}
+		catch (FeignException e) {
+			log.warn("Payment system gave no answer for refund {} (status {}); outcome unknown", refund.id(), e.status());
+			paymentMetrics.paymentSystemError("refund");
+			return Outcome.UNKNOWN;
+		}
+		// Unlike execute, the caller is waiting and can be told: certainly not sent, try again later (503).
+		catch (CallNotPermittedException e) {
+			throw new ExternalSystemUnavailableException("Payment system", e);
+		}
+		return switch (status) {
+			case "SETTLED" -> Outcome.EXECUTED;
+			case "REJECTED" -> Outcome.REJECTED;
+			case null, default -> {
+				log.warn("Unknown status from payment system for refund {}: {}", refund.id(), status);
 				yield Outcome.UNKNOWN;
 			}
 		};

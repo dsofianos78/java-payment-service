@@ -11,14 +11,19 @@ import com.example.payment.application.exception.PaymentAuthorizationException;
 import com.example.payment.application.exception.PaymentLimitExceededException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.exception.RefundExceedsPaymentException;
 import com.example.payment.application.port.primary.CancelPaymentUseCase;
+import com.example.payment.application.port.primary.GetRefundsUseCase;
+import com.example.payment.application.port.primary.RefundPaymentUseCase;
 import com.example.payment.application.port.primary.RequestPaymentExecutionUseCase;
 import com.example.payment.application.usecase.command.CancelPaymentCommand;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
+import com.example.payment.application.usecase.command.RefundPaymentCommand;
 import com.example.payment.application.usecase.query.GetPaymentQuery;
 import com.example.payment.application.usecase.query.GetPaymentResult;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.entity.Refund;
 import com.example.payment.domain.valueobject.AccountId;
 import com.example.payment.domain.valueobject.Currency;
 import com.example.payment.domain.valueobject.Money;
@@ -62,6 +67,8 @@ class PaymentControllerPortTest {
 
 	private static final RequestPaymentExecutionUseCase NO_EXECUTE = command -> { throw new AssertionError("not an execute"); };
 	private static final CancelPaymentUseCase NO_CANCEL = command -> { throw new AssertionError("not a cancel"); };
+	private static final RefundPaymentUseCase NO_REFUND = command -> { throw new AssertionError("not a refund"); };
+	private static final GetRefundsUseCase NO_REFUNDS = query -> { throw new AssertionError("not a refunds query"); };
 
 	@Test
 	void translatesRequestIntoCommandAndPaymentIntoResponse() throws Exception {
@@ -70,7 +77,7 @@ class PaymentControllerPortTest {
 			received.set(command);
 			return Payment.create(new AccountId("ACC-1"), new AccountId("ACC-2"),
 					new Money(new BigDecimal("9.99"), Currency.GBP), new PaymentReference("From stub"));
-		}, query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL));
+		}, query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL, NO_REFUND, NO_REFUNDS));
 
 		mockMvc.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST).principal(CALLER))
 				.andExpect(status().isCreated())
@@ -91,7 +98,7 @@ class PaymentControllerPortTest {
 				query -> {
 					assertThat(query).isEqualTo(new GetPaymentQuery("pay-1", "CUST-1001"));
 					return stored;
-				}, NO_EXECUTE, NO_CANCEL));
+				}, NO_EXECUTE, NO_CANCEL, NO_REFUND, NO_REFUNDS));
 
 		mockMvc.perform(get("/payments/pay-1").principal(CALLER))
 				.andExpect(status().isOk())
@@ -109,7 +116,7 @@ class PaymentControllerPortTest {
 				command -> {
 					assertThat(command).isEqualTo(new ExecutePaymentCommand("pay-1", "CUST-1001"));
 					return queued;
-				}, NO_CANCEL));
+				}, NO_CANCEL, NO_REFUND, NO_REFUNDS));
 
 		mockMvc.perform(post("/payments/pay-1/execute").principal(CALLER))
 				.andExpect(status().isAccepted())
@@ -122,7 +129,7 @@ class PaymentControllerPortTest {
 				command -> { throw new AssertionError("not a create"); },
 				query -> { throw new AssertionError("not a query"); },
 				command -> { throw new InvalidPaymentStateException("Payment pay-1 is COMPLETED and cannot become PROCESSING",
-						new IllegalStateException()); }, NO_CANCEL))
+						new IllegalStateException()); }, NO_CANCEL, NO_REFUND, NO_REFUNDS))
 				.perform(post("/payments/pay-1/execute").principal(CALLER))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.detail").value("Payment pay-1 is COMPLETED and cannot become PROCESSING"));
@@ -139,11 +146,50 @@ class PaymentControllerPortTest {
 				command -> {
 					assertThat(command).isEqualTo(new CancelPaymentCommand("pay-1", "CUST-1001"));
 					return cancelled;
-				}));
+				}, NO_REFUND, NO_REFUNDS));
 
 		mockMvc.perform(post("/payments/pay-1/cancel").principal(CALLER))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("CANCELLED"));
+	}
+
+	@Test
+	void passesTheRefundRequestAsACommandAndAnswers201WithTheRefund() throws Exception {
+		PaymentId paymentId = new PaymentId(UUID.randomUUID());
+		AtomicReference<RefundPaymentCommand> received = new AtomicReference<>();
+		MockMvc mockMvc = mockMvc(new PaymentController(
+				command -> { throw new AssertionError("not a create"); },
+				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL,
+				command -> {
+					received.set(command);
+					Refund refund = Refund.create(paymentId, new Money(new BigDecimal("50.00"), Currency.EUR));
+					refund.complete();
+					return refund;
+				}, NO_REFUNDS));
+
+		mockMvc.perform(post("/payments/{id}/refunds", paymentId).header("Idempotency-Key", "refund-1")
+						.contentType(MediaType.APPLICATION_JSON).content("{ \"amount\": 50.00, \"currency\": \"EUR\" }")
+						.principal(CALLER))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.paymentId").value(paymentId.toString()))
+				.andExpect(jsonPath("$.status").value("COMPLETED"));
+
+		assertThat(received.get()).isEqualTo(new RefundPaymentCommand(
+				paymentId.toString(), new BigDecimal("50.00"), "EUR", "CUST-1001", "refund-1"));
+	}
+
+	@Test
+	void mapsARefundOverTheRemainingAmountTo422() throws Exception {
+		mockMvc(new PaymentController(
+				command -> { throw new AssertionError("not a create"); },
+				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL,
+				command -> { throw new RefundExceedsPaymentException("Refund of 300.00 exceeds the 250.00 EUR left", null); },
+				NO_REFUNDS))
+				.perform(post("/payments/pay-1/refunds").header("Idempotency-Key", "refund-1")
+						.contentType(MediaType.APPLICATION_JSON).content("{ \"amount\": 300.00, \"currency\": \"EUR\" }")
+						.principal(CALLER))
+				.andExpect(status().isUnprocessableContent())
+				.andExpect(jsonPath("$.detail").value("Refund of 300.00 exceeds the 250.00 EUR left"));
 	}
 
 	// Every application exception has exactly one HTTP status, and its message becomes the detail.
@@ -162,7 +208,7 @@ class PaymentControllerPortTest {
 		PaymentId unknown = new PaymentId(UUID.randomUUID());
 		mockMvc(new PaymentController(
 				command -> { throw new AssertionError("not a create"); },
-				query -> { throw new PaymentNotFoundException(unknown); }, NO_EXECUTE, NO_CANCEL))
+				query -> { throw new PaymentNotFoundException(unknown); }, NO_EXECUTE, NO_CANCEL, NO_REFUND, NO_REFUNDS))
 				.perform(get("/payments/{id}", unknown).principal(CALLER))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.detail").value("Payment " + unknown + " does not exist"));
@@ -172,7 +218,7 @@ class PaymentControllerPortTest {
 	void doesNotLeakTheCauseOfAnUnavailableAccountSystem() throws Exception {
 		mockMvc(new PaymentController(
 				command -> { throw new AccountUnavailableException(new RuntimeException("10.0.0.7:8089 refused")); },
-				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL))
+				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL, NO_REFUND, NO_REFUNDS))
 				.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST).principal(CALLER))
 				.andExpect(status().isServiceUnavailable())
 				.andExpect(jsonPath("$.detail").value("Account system is unavailable"));
@@ -181,7 +227,7 @@ class PaymentControllerPortTest {
 	private static void assertCreateFailsWith(RuntimeException thrown, int httpStatus) throws Exception {
 		mockMvc(new PaymentController(
 				command -> { throw thrown; },
-				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL))
+				query -> { throw new AssertionError("not a query"); }, NO_EXECUTE, NO_CANCEL, NO_REFUND, NO_REFUNDS))
 				.perform(post("/payments").header("Idempotency-Key", "key-1").contentType(MediaType.APPLICATION_JSON).content(VALID_REQUEST).principal(CALLER))
 				.andExpect(status().is(httpStatus))
 				.andExpect(jsonPath("$.status").value(httpStatus))

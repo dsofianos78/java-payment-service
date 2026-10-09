@@ -2,11 +2,15 @@ package com.example.payment.application.service.command;
 
 import com.example.payment.TestcontainersConfiguration;
 import com.example.payment.application.exception.InvalidPaymentStateException;
+import com.example.payment.application.exception.RefundExceedsPaymentException;
 import com.example.payment.application.port.primary.CreatePaymentUseCase;
 import com.example.payment.application.port.primary.ExecutePaymentUseCase;
+import com.example.payment.application.port.primary.RefundPaymentUseCase;
 import com.example.payment.application.usecase.command.CreatePaymentCommand;
 import com.example.payment.application.usecase.command.ExecutePaymentCommand;
+import com.example.payment.application.usecase.command.RefundPaymentCommand;
 import com.example.payment.domain.entity.Payment;
+import com.example.payment.domain.entity.Refund;
 import com.example.payment.infrastructure.adapter.secondary.persistence.AuditPersistenceAdapter;
 import com.example.payment.infrastructure.adapter.secondary.persistence.OutboxPersistenceAdapter;
 import com.example.payment.infrastructure.adapter.secondary.persistence.PaymentPersistenceAdapter;
@@ -72,6 +76,9 @@ class PaymentTransactionsTest {
 
 	@Autowired
 	ExecutePaymentUseCase executePayment;
+
+	@Autowired
+	RefundPaymentUseCase refundPayment;
 
 	@Autowired
 	JdbcClient jdbc;
@@ -177,6 +184,39 @@ class PaymentTransactionsTest {
 		assertThat(refused).hasSize(7).allMatch(InvalidPaymentStateException.class::isInstance);
 		assertThat(auditTrail(payment)).containsExactly(
 				"CREATED->AUTHORIZED", "AUTHORIZED->PROCESSING", "PROCESSING->COMPLETED");
+	}
+
+	// Each refund alone is fine (150 of 250); together they are 300. Without the payment's lock both could read
+	// "250 left" and both pass. With it, the second waits, then sees the first's PROCESSING row.
+	@Test
+	void concurrentRefundsNeverAddUpToMoreThanThePayment() throws Exception {
+		Payment payment = create(UUID.randomUUID().toString());
+		executePayment.executePayment(execute(payment));
+
+		List<Callable<Refund>> requests = List.of(() -> refund(payment, "150.00"), () -> refund(payment, "150.00"));
+		int succeeded = 0;
+		List<Throwable> refused = new ArrayList<>();
+		try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+			for (Future<Refund> f : pool.invokeAll(requests)) {
+				try {
+					f.get();
+					succeeded++;
+				}
+				catch (ExecutionException e) {
+					refused.add(e.getCause());
+				}
+			}
+		}
+
+		assertThat(succeeded).isEqualTo(1);
+		assertThat(refused).singleElement().isInstanceOf(RefundExceedsPaymentException.class);
+		assertThat(jdbc.sql("SELECT sum(amount) FROM refund WHERE payment_id = ?").param(payment.id().value())
+				.query(BigDecimal.class).single()).isEqualByComparingTo("150.00");
+	}
+
+	private Refund refund(Payment payment, String amount) {
+		return refundPayment.refundPayment(new RefundPaymentCommand(payment.id().toString(), new BigDecimal(amount),
+				"EUR", "CUST-1001", UUID.randomUUID().toString()));
 	}
 
 	private Payment create(String idempotencyKey) {

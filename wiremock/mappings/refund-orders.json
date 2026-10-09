@@ -1,0 +1,26 @@
+{
+  "mappings": [
+    {
+      "name": "A refund the payment system rejects",
+      "priority": 1,
+      "request": { "method": "POST", "url": "/refund-orders",
+        "bodyPatterns": [ { "matchesJsonPath": "$[?(@.amount == 13.13)]" } ] },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "REJECTED", "reason": "Account closed" } }
+    },
+    {
+      "name": "A refund whose answer comes too late: settled, but we stopped listening",
+      "priority": 1,
+      "request": { "method": "POST", "url": "/refund-orders",
+        "bodyPatterns": [ { "matchesJsonPath": "$[?(@.amount == 17.17)]" } ] },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "SETTLED" }, "fixedDelayMilliseconds": 7000 }
+    },
+    {
+      "priority": 10,
+      "request": { "method": "POST", "url": "/refund-orders" },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "SETTLED" } }
+    }
+  ]
+}

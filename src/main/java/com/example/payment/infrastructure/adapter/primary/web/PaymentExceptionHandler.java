@@ -11,6 +11,7 @@ import com.example.payment.application.exception.PaymentAuthorizationException;
 import com.example.payment.application.exception.PaymentLimitExceededException;
 import com.example.payment.application.exception.PaymentNotFoundException;
 import com.example.payment.application.exception.PaymentValidationException;
+import com.example.payment.application.exception.RefundExceedsPaymentException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -51,9 +52,9 @@ class PaymentExceptionHandler {
 	// Well-formed, but the key belongs to another request; retrying the same thing can never succeed.
 	// Same for a payment the authorization or limit system refused: valid, just not allowed.
 	// (Not 403: that would say the caller lacks permission, not that the payment was declined. 403 is access
-	// control, AccessDeniedException.)
+	// control, AccessDeniedException.) Same for a refund larger than what is left to refund.
 	@ExceptionHandler({IdempotencyKeyMismatchException.class, PaymentAuthorizationException.class,
-			PaymentLimitExceededException.class})
+			PaymentLimitExceededException.class, RefundExceedsPaymentException.class})
 	ProblemDetail unprocessable(RuntimeException e) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, e.getMessage());
 	}

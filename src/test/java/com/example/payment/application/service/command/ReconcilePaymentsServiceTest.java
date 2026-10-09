@@ -14,6 +14,7 @@ import com.example.payment.domain.valueobject.Money;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.PaymentReference;
 import com.example.payment.domain.valueobject.PaymentStatus;
+import com.example.payment.domain.entity.Refund;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionOperations;
 
@@ -67,6 +68,11 @@ class ReconcilePaymentsServiceTest {
 		}
 
 		@Override
+		public Optional<Payment> findByIdForUpdate(PaymentId paymentId) {
+			throw new AssertionError("only refunds lock a payment");
+		}
+
+		@Override
 		public List<Payment> findProcessingSince(Instant before) {
 			askedForBefore = before;
 			return stuck;
@@ -80,6 +86,11 @@ class ReconcilePaymentsServiceTest {
 		}
 
 		@Override
+		public Outcome refund(Refund refund) {
+			throw new AssertionError("no refunds here");
+		}
+
+		@Override
 		public Outcome findOutcome(Payment payment) {
 			Outcome outcome = answers.get(payment.id());
 			if (outcome == null) {
@@ -89,7 +100,7 @@ class ReconcilePaymentsServiceTest {
 		}
 	};
 
-	private final AuditPort audit = (paymentId, from, to) -> audited.add(from + "->" + to);
+	private final AuditPort audit = AuditTrail.into(audited);
 
 	private final ReconcilePaymentsService service = new ReconcilePaymentsService(repository, paymentSystem, audit,
 			events::add, metrics, TransactionOperations.withoutTransaction());
