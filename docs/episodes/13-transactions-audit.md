@@ -1,6 +1,6 @@
 # Episode 13 — Transactions and Audit
 
-Git tag: `episode-13-transactions-audit` · Previous: [Episode 12 — Authorization and Limits](12-authorization-limits.md) · Next: Episode 14 — Architecture Tests
+Git tag: `episode-13-transactions-audit` · Previous: [Episode 12 — Authorization and Limits](12-authorization-limits.md) · Next: [Episode 14 — Architecture Tests](14-architecture-tests.md)
 
 ## Goal
 
