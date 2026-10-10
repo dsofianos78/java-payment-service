@@ -5,6 +5,7 @@ import com.example.payment.application.port.secondary.PaymentExecutionPort;
 import com.example.payment.domain.entity.Payment;
 import com.example.payment.domain.entity.Refund;
 import com.example.payment.infrastructure.adapter.secondary.feign.PaymentExecutionClient.PaymentOrderRequest;
+import com.example.payment.infrastructure.adapter.secondary.feign.PaymentExecutionClient.PaymentOrderResponse;
 import com.example.payment.infrastructure.adapter.secondary.feign.PaymentExecutionClient.RefundOrderRequest;
 import com.example.payment.infrastructure.observability.PaymentMetrics;
 import feign.FeignException;
@@ -14,6 +15,8 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+
+import java.util.function.Supplier;
 
 /**
  * Answers {@link PaymentExecutionPort} by sending the payment to the external
@@ -106,16 +109,26 @@ class PaymentExecutionAdapter implements PaymentExecutionPort {
 	// No Retry here either, though asking is safe: reconciliation asks again on its next run anyway.
 	@Override
 	public Outcome findOutcome(Payment payment) {
+		return ask(() -> paymentExecutionClient.find(payment.id().toString()), "payment " + payment.id());
+	}
+
+	// The refund ID was its Idempotency-Key (refund above), so it is what we ask by.
+	@Override
+	public Outcome findRefundOutcome(Refund refund) {
+		return ask(() -> paymentExecutionClient.findRefund(refund.id().toString()), "refund " + refund.id());
+	}
+
+	private Outcome ask(Supplier<PaymentOrderResponse> question, String subject) {
 		String status;
 		try {
-			status = circuitBreaker.executeSupplier(() -> paymentExecutionClient.find(payment.id().toString())).status();
+			status = circuitBreaker.executeSupplier(question).status();
 		}
 		// A clear answer: they have no order with this key. Not counted by the breaker, which only records no-answers.
 		catch (FeignException.NotFound e) {
 			return Outcome.NOT_RECEIVED;
 		}
 		catch (FeignException e) {
-			log.warn("Payment system gave no answer about payment {} (status {})", payment.id(), e.status());
+			log.warn("Payment system gave no answer about {} (status {})", subject, e.status());
 			paymentMetrics.paymentSystemError("reconciliation");
 			return Outcome.UNKNOWN;
 		}
@@ -126,7 +139,7 @@ class PaymentExecutionAdapter implements PaymentExecutionPort {
 			case "SETTLED" -> Outcome.EXECUTED;
 			case "REJECTED" -> Outcome.REJECTED;
 			case null, default -> {
-				log.warn("Unknown status from payment system for payment {}: {}", payment.id(), status);
+				log.warn("Unknown status from payment system for {}: {}", subject, status);
 				yield Outcome.UNKNOWN;
 			}
 		};

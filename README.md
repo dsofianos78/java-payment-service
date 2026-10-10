@@ -59,6 +59,7 @@ first, and build on it in order.
 | B4 | [Refunds](docs/episodes/bonus-04-refunds.md) | `bonus-04-refunds` |
 | B5 | [Distributed Tracing](docs/episodes/bonus-05-distributed-tracing.md) | `bonus-05-distributed-tracing` |
 | B6 | [Centralized Logs](docs/episodes/bonus-06-centralized-logs.md) | `bonus-06-centralized-logs` |
+| B7 | [More Than One Instance](docs/episodes/bonus-07-multiple-instances.md) | `bonus-07-multiple-instances` |
 
 ## License
 

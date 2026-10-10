@@ -249,6 +249,11 @@ class ExecutePaymentServiceTest {
 			public Outcome findOutcome(Payment payment) {
 				throw new AssertionError("execute never asks about an outcome");
 			}
+
+			@Override
+			public Outcome findRefundOutcome(Refund refund) {
+				throw new AssertionError("no refunds here");
+			}
 		};
 	}
 

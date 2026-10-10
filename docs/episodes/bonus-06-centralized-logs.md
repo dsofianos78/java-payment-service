@@ -1,6 +1,6 @@
 # Bonus Episode 06 — Centralized Logs
 
-Git tag: `bonus-06-centralized-logs` · Builds on: [Bonus Episode 05 — Distributed Tracing](bonus-05-distributed-tracing.md)
+Git tag: `bonus-06-centralized-logs` · Builds on: [Bonus Episode 05 — Distributed Tracing](bonus-05-distributed-tracing.md) · Next: [Bonus Episode 07 — More Than One Instance](bonus-07-multiple-instances.md)
 
 ## Goal
 

@@ -17,8 +17,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -28,6 +30,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,7 +40,8 @@ class PaymentEventRelayTest {
 	@SuppressWarnings("unchecked")
 	private final KafkaTemplate<String, PaymentEventMessage> kafka = mock(KafkaTemplate.class);
 	private final OutboxPersistenceAdapter outbox = mock(OutboxPersistenceAdapter.class);
-	private final PaymentEventRelay relay = new PaymentEventRelay(outbox, kafka, 100, new SimpleMeterRegistry(), Tracer.NOOP);
+	private final PaymentEventRelay relay = new PaymentEventRelay(outbox, kafka, 100, Duration.ofDays(7),
+			new SimpleMeterRegistry(), Tracer.NOOP, TransactionOperations.withoutTransaction());
 
 	private final Pending first = pending(1);
 	private final Pending second = pending(2);
@@ -51,7 +55,7 @@ class PaymentEventRelayTest {
 
 	@Test
 	void sendsInOrderAndMarksEachPublishedAfterTheAck() {
-		when(outbox.findUnpublished(100)).thenReturn(List.of(first, second));
+		when(outbox.claimUnpublished(100)).thenReturn(List.of(first, second));
 		when(kafka.send(any(), any(), any())).thenReturn(acked());
 
 		relay.relay();
@@ -63,9 +67,10 @@ class PaymentEventRelayTest {
 		order.verify(outbox).markPublished(second);
 	}
 
+	// The broker is likely down: stop rather than wait out every send's deadline. The claim ends with the run.
 	@Test
-	void stopsAtTheFirstFailureSoNothingOvertakesIt() {
-		when(outbox.findUnpublished(100)).thenReturn(List.of(first, second, third));
+	void stopsAtTheFirstFailure() {
+		when(outbox.claimUnpublished(100)).thenReturn(List.of(first, second, third));
 		when(kafka.send(any(), any(), any())).thenReturn(acked());
 		when(kafka.send(any(), eq(key(second)), any())).thenReturn(CompletableFuture.failedFuture(new RuntimeException("broker down")));
 
@@ -74,6 +79,16 @@ class PaymentEventRelayTest {
 		verify(outbox).markPublished(first);
 		verify(outbox, never()).markPublished(second);
 		verify(kafka, never()).send(any(), eq(key(third)), any());
+	}
+
+	// Batch after batch, until one comes back short: nothing older than the retention is left.
+	@Test
+	void deletesPublishedRowsOlderThanTheRetentionInBatches() {
+		when(outbox.deletePublishedBefore(any(), eq(1000))).thenReturn(1000, 1000, 7);
+
+		relay.deletePublished();
+
+		verify(outbox, times(3)).deletePublishedBefore(any(), eq(1000));
 	}
 
 	private static CompletableFuture<SendResult<String, PaymentEventMessage>> acked() {

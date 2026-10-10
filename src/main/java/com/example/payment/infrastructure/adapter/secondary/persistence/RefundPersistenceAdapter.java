@@ -46,6 +46,13 @@ public class RefundPersistenceAdapter implements RefundRepository {
 		return jpaRepository.findByIdempotencyKey(idempotencyKey).map(RefundPersistenceAdapter::toDomain);
 	}
 
+	@Override
+	public List<Refund> findProcessingSince(Instant before) {
+		return jpaRepository.findByStatusAndStatusChangedAtLessThanEqual(RefundStatus.PROCESSING.name(), before).stream()
+				.map(RefundPersistenceAdapter::toDomain)
+				.toList();
+	}
+
 	// Through the domain's constructors, as PaymentEntityMapper: a corrupt row fails here.
 	private static Refund toDomain(RefundEntity row) {
 		return Refund.restore(new RefundId(row.getId()), new PaymentId(row.getPaymentId()),

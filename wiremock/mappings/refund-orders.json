@@ -21,6 +21,13 @@
       "request": { "method": "POST", "url": "/refund-orders" },
       "response": { "status": 200, "headers": { "Content-Type": "application/json" },
         "jsonBody": { "status": "SETTLED" } }
+    },
+    {
+      "name": "Reconciliation: any refund settled, as the 17.17 one above did after its answer was lost",
+      "priority": 10,
+      "request": { "method": "GET", "urlPathPattern": "/refund-orders/[^/]+" },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "SETTLED" } }
     }
   ]
 }

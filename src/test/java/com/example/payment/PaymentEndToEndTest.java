@@ -124,6 +124,8 @@ class PaymentEndToEndTest {
 		registry.add("spring.cloud.openfeign.client.config.payment-system.read-timeout", () -> "300");
 		// Reconciliation runs often here; with the 2m threshold it only finds payments a test has backdated.
 		registry.add("payment.reconciliation.interval", () -> "200ms");
+		// One instance here: a run that ends early needn't keep the lock, the next one 200ms later should run.
+		registry.add("payment.reconciliation.lock-at-least-for", () -> "0s");
 		registry.add("payment.events.relay-interval", () -> "100ms");
 		registry.add("management.tracing.export.otlp.enabled", () -> "false");
 		// Nothing listens on port 9: each export fails, as when Loki is down.
@@ -516,6 +518,30 @@ class PaymentEndToEndTest {
 		String refunded = messages.get(1);
 		assertThat((String) JsonPath.read(refunded, "$.refundId")).isEqualTo(refundId);
 		assertThat((Double) JsonPath.read(refunded, "$.amount")).isEqualTo(40.00);
+	}
+
+	// The 17.17 refund settled after we stopped listening (wiremock/mappings/refund-orders.json). A reconciliation run
+	// asks about it by its refund ID, and the refund catches up: audited, and published like any finished refund.
+	@Test
+	void reconciliationCompletesARefundWhoseAnswerWasLost() throws Exception {
+		String paymentId = completedPayment("Refund reconciled later");
+		String refundId = JsonPath.read(refund(paymentId, "17.17", customer())
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.status").value("PROCESSING"))
+				.andReturn().getResponse().getContentAsString(), "$.refundId");
+
+		jdbc.sql("UPDATE refund SET status_changed_at = now() - interval '1 hour' WHERE id = ?::uuid").param(refundId).update();
+
+		await().untilAsserted(() -> assertThat(jdbc.sql("SELECT status FROM refund WHERE id = ?::uuid").param(refundId)
+				.query(String.class).single()).isEqualTo("COMPLETED"));
+		externalSystems.verify(getRequestedFor(urlEqualTo("/refund-orders/" + refundId)));
+		assertThat(jdbc.sql("SELECT count(*) FROM refund_audit WHERE refund_id = ?::uuid AND from_status = 'PROCESSING' AND to_status = 'COMPLETED'")
+				.param(refundId).query(Integer.class).single()).isEqualTo(1);
+		assertThat(paymentEvents(paymentId, 2)).extracting(m -> (String) JsonPath.read(m, "$.type"))
+				.containsExactly("PAYMENT_COMPLETED", "REFUND_COMPLETED");
+		// Asked, never sent again.
+		externalSystems.verify(1, postRequestedFor(urlEqualTo("/refund-orders"))
+				.withRequestBody(matchingJsonPath("$.originalPaymentId", equalTo(paymentId))));
 	}
 
 	// Kafka delivers at least once, so the same message twice is normal. The second finds the payment past

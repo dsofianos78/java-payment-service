@@ -91,6 +91,11 @@ class ReconcilePaymentsServiceTest {
 		}
 
 		@Override
+		public Outcome findRefundOutcome(Refund refund) {
+			throw new AssertionError("no refunds here");
+		}
+
+		@Override
 		public Outcome findOutcome(Payment payment) {
 			Outcome outcome = answers.get(payment.id());
 			if (outcome == null) {

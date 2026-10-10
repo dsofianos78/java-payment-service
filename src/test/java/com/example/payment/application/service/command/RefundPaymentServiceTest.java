@@ -115,6 +115,11 @@ class RefundPaymentServiceTest {
 		public Optional<Refund> findByIdempotencyKey(String idempotencyKey) {
 			return Optional.ofNullable(refundsByKey.get(idempotencyKey));
 		}
+
+		@Override
+		public List<Refund> findProcessingSince(Instant before) {
+			throw new AssertionError("only reconciliation looks for stuck refunds");
+		}
 	};
 
 	private final PaymentExecutionPort paymentSystem = new PaymentExecutionPort() {
@@ -126,6 +131,11 @@ class RefundPaymentServiceTest {
 		@Override
 		public Outcome findOutcome(Payment payment) {
 			throw new AssertionError("a refund never asks about the payment");
+		}
+
+		@Override
+		public Outcome findRefundOutcome(Refund refund) {
+			throw new AssertionError("asking is reconciliation's job");
 		}
 
 		@Override

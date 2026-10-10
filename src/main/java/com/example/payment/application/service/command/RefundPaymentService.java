@@ -140,7 +140,7 @@ public class RefundPaymentService implements RefundPaymentUseCase {
 			case EXECUTED -> refund.complete();
 			case REJECTED -> refund.fail();
 			// The money may have gone back. PROCESSING is the truth, and it still counts against the payment.
-			// ponytail: only the payment system can settle it (GET /refund-orders/{refundId}); no reconciliation yet.
+			// ReconcileRefundsService asks the payment system later (docs/episodes/bonus-07).
 			case UNKNOWN, NOT_RECEIVED -> {
 				log.warn("Refund {} left PROCESSING: payment system outcome unknown", refund.id());
 				return refund;

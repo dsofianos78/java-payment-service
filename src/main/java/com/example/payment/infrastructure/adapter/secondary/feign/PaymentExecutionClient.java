@@ -30,6 +30,10 @@ interface PaymentExecutionClient {
 	PaymentOrderResponse refund(@RequestHeader("Idempotency-Key") String idempotencyKey,
 			@RequestBody RefundOrderRequest request);
 
+	/** What became of the refund sent with this Idempotency-Key. 404 if it never arrived. */
+	@GetMapping("/refund-orders/{idempotencyKey}")
+	PaymentOrderResponse findRefund(@PathVariable String idempotencyKey);
+
 	record PaymentOrderRequest(String debtorAccount, String creditorAccount, BigDecimal amount, String currency,
 			String reference) {
 	}

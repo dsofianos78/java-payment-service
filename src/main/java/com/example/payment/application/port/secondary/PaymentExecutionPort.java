@@ -26,6 +26,12 @@ public interface PaymentExecutionPort {
 	 */
 	Outcome refund(Refund refund);
 
+	/**
+	 * Asks the payment system what became of a refund it may have received, as findOutcome does for a payment.
+	 * NOT_RECEIVED if it never arrived.
+	 */
+	Outcome findRefundOutcome(Refund refund);
+
 	enum Outcome {
 		/** The money moved (for a refund: went back). */
 		EXECUTED,
@@ -36,7 +42,7 @@ public interface PaymentExecutionPort {
 		 * may or may not have gone through; only the payment system knows.
 		 */
 		UNKNOWN,
-		/** Only from findOutcome: the payment system never received the payment, so no money moved. */
+		/** Only from findOutcome and findRefundOutcome: the payment system never received it, so no money moved. */
 		NOT_RECEIVED
 	}
 }

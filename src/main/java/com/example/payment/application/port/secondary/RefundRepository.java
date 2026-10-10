@@ -4,6 +4,7 @@ import com.example.payment.domain.entity.Refund;
 import com.example.payment.domain.valueobject.PaymentId;
 import com.example.payment.domain.valueobject.RefundStatus;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,6 +22,9 @@ public interface RefundRepository {
 
 	/** The payment's refunds, oldest first. */
 	List<Refund> findByPaymentId(PaymentId paymentId);
+
+	/** Refunds that have been PROCESSING since {@code before} or earlier. */
+	List<Refund> findProcessingSince(Instant before);
 
 	/** The refund created with this key, or empty if the key has never been used. */
 	Optional<Refund> findByIdempotencyKey(String idempotencyKey);

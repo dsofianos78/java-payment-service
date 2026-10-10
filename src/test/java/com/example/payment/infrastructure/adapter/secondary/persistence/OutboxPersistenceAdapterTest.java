@@ -21,8 +21,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -64,7 +67,7 @@ class OutboxPersistenceAdapterTest {
 		entityManager.flush();
 		entityManager.clear();
 
-		assertThat(outbox.findUnpublished(1000)).extracting(Pending::event)
+		assertThat(outbox.claimUnpublished(1000)).extracting(Pending::event)
 				.containsSubsequence(completed, cancelled);
 	}
 
@@ -73,13 +76,62 @@ class OutboxPersistenceAdapterTest {
 		PaymentEvent event = eventFor(storedPayment(PaymentStatus.COMPLETED));
 		outbox.record(event);
 		entityManager.flush();
-		Pending pending = outbox.findUnpublished(1000).stream()
+		Pending pending = outbox.claimUnpublished(1000).stream()
 				.filter(p -> p.event().eventId().equals(event.eventId())).findFirst().orElseThrow();
 
 		outbox.markPublished(pending);
 		entityManager.clear();
 
-		assertThat(outbox.findUnpublished(1000)).extracting(Pending::event).doesNotContain(event);
+		assertThat(outbox.claimUnpublished(1000)).extracting(Pending::event).doesNotContain(event);
+	}
+
+	// Its second event waits until the first is published: a relay that claims it can't overtake the first.
+	@Test
+	void onlyEachPaymentsOldestUnpublishedEventIsClaimed() {
+		Payment payment = storedPayment(PaymentStatus.COMPLETED);
+		PaymentEvent first = eventFor(payment);
+		PaymentEvent second = eventFor(payment);
+		outbox.record(first);
+		outbox.record(second);
+		entityManager.flush();
+
+		List<Pending> claimed = outbox.claimUnpublished(1000).stream()
+				.filter(p -> p.event().paymentId().equals(payment.id())).toList();
+		assertThat(claimed).extracting(Pending::event).containsExactly(first);
+
+		outbox.markPublished(claimed.getFirst());
+		entityManager.clear();
+
+		assertThat(outbox.claimUnpublished(1000)).extracting(Pending::event).contains(second).doesNotContain(first);
+	}
+
+	@Test
+	void deletesOnlyRowsPublishedBeforeTheCutOff() {
+		PaymentEvent old = eventFor(storedPayment(PaymentStatus.COMPLETED));
+		PaymentEvent recent = eventFor(storedPayment(PaymentStatus.COMPLETED));
+		PaymentEvent unpublished = eventFor(storedPayment(PaymentStatus.COMPLETED));
+		outbox.record(old);
+		outbox.record(recent);
+		outbox.record(unpublished);
+		entityManager.flush();
+		publishedAgo(old, "8 days");
+		publishedAgo(recent, "1 day");
+
+		int deleted = outbox.deletePublishedBefore(Instant.now().minus(Duration.ofDays(7)), 1000);
+
+		assertThat(deleted).isEqualTo(1);
+		assertThat(eventIds()).doesNotContain(old.eventId()).contains(recent.eventId(), unpublished.eventId());
+	}
+
+	private void publishedAgo(PaymentEvent event, String age) {
+		entityManager.getEntityManager().createNativeQuery(
+				"UPDATE payment_outbox SET published_at = now() - CAST(:age AS interval) WHERE event_id = :id")
+				.setParameter("age", age).setParameter("id", event.eventId()).executeUpdate();
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<UUID> eventIds() {
+		return entityManager.getEntityManager().createNativeQuery("SELECT event_id FROM payment_outbox").getResultList();
 	}
 
 	private Payment storedPayment(PaymentStatus status) {

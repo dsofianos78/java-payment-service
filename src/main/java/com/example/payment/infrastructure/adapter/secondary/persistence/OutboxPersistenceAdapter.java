@@ -11,7 +11,6 @@ import com.example.payment.domain.valueobject.RefundId;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
-import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -24,7 +23,8 @@ import java.util.Map;
  * event is an INSERT that joins the caller's transaction, so it commits or
  * rolls back with the status change. Nothing is sent from here.
  *
- * The other methods are for PaymentEventRelay, which sends the rows on.
+ * The other methods are for PaymentEventRelay, which sends the rows on and
+ * later deletes them.
  *
  * Each row also keeps the W3C traceparent of the trace the change happened
  * in, so the relay's send, seconds later on another thread, joins that trace
@@ -54,9 +54,12 @@ public class OutboxPersistenceAdapter implements PaymentEventPort {
 				event.amount().currency().name(), event.occurredAt(), currentTraceparent()));
 	}
 
-	/** Events not yet published, oldest first. */
-	public List<Pending> findUnpublished(int max) {
-		return jpaRepository.findByPublishedAtIsNullOrderByIdAsc(Limit.of(max)).stream()
+	/**
+	 * Up to {@code max} events to publish, oldest first, at most one per payment (its oldest unpublished one).
+	 * They stay claimed, invisible to every other relay, until the caller's transaction ends; call it in one.
+	 */
+	public List<Pending> claimUnpublished(int max) {
+		return jpaRepository.claimUnpublished(max).stream()
 				.map(row -> new Pending(row.getId(), new PaymentEvent(row.getEventId(),
 						PaymentEventType.valueOf(row.getEventType()), new PaymentId(row.getPaymentId()),
 						row.getRefundId() == null ? null : new RefundId(row.getRefundId()),
@@ -68,6 +71,11 @@ public class OutboxPersistenceAdapter implements PaymentEventPort {
 
 	public void markPublished(Pending pending) {
 		jpaRepository.markPublished(pending.position(), Instant.now());
+	}
+
+	/** Deletes up to {@code max} events published before {@code before}; returns how many it deleted. */
+	public int deletePublishedBefore(Instant before, int max) {
+		return jpaRepository.deletePublishedBefore(before, max);
 	}
 
 	public long countUnpublished() {
