@@ -3,10 +3,16 @@ package com.example.payment;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.example.payment.infrastructure.adapter.primary.messaging.PaymentProcessingMessage;
 import com.jayway.jsonpath.JsonPath;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.exporter.otlp.http.logs.OtlpHttpLogRecordExporter;
+import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;
+import io.opentelemetry.sdk.logs.data.LogRecordData;
+import io.opentelemetry.sdk.testing.exporter.InMemoryLogRecordExporter;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SpanProcessor;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -89,6 +95,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Metrics and tracing are on as in production (Boot propagates the
  * traceparent header only then), with spans kept in memory instead of sent
  * to Tempo.
+ *
+ * Log records take the production path, the batch processor and its OTLP
+ * exporter, to a Loki that isn't there: every test here runs with Loki down.
+ * The same batches also reach an in-memory exporter the tests read.
  */
 @SpringBootTest
 @ActiveProfiles("local")
@@ -116,6 +126,8 @@ class PaymentEndToEndTest {
 		registry.add("payment.reconciliation.interval", () -> "200ms");
 		registry.add("payment.events.relay-interval", () -> "100ms");
 		registry.add("management.tracing.export.otlp.enabled", () -> "false");
+		// Nothing listens on port 9: each export fails, as when Loki is down.
+		registry.add("management.opentelemetry.logging.export.otlp.endpoint", () -> "http://localhost:9/otlp/v1/logs");
 	}
 
 	@Autowired
@@ -136,6 +148,21 @@ class PaymentEndToEndTest {
 	@Autowired
 	InMemorySpanExporter spans;
 
+	@Autowired
+	InMemoryLogRecordExporter logRecords;
+
+	@Autowired
+	OpenTelemetry openTelemetry;
+
+	@Autowired
+	List<OtlpHttpLogRecordExporter> lokiExporters;
+
+	// The appender sends to the last context that installed it; another test class's context may have since.
+	@BeforeEach
+	void sendLogsToThisContext() {
+		OpenTelemetryAppender.install(openTelemetry);
+	}
+
 	// Finished spans are kept in memory, as each one ends, instead of being sent to Tempo.
 	@TestConfiguration
 	static class Spans {
@@ -148,6 +175,12 @@ class PaymentEndToEndTest {
 		@Bean
 		SpanProcessor inMemorySpans(InMemorySpanExporter exporter) {
 			return SimpleSpanProcessor.create(exporter);
+		}
+
+		// Boot's batch processor exports to every LogRecordExporter bean: Loki (OTLP) and this one.
+		@Bean
+		InMemoryLogRecordExporter logRecordExporter() {
+			return InMemoryLogRecordExporter.create();
 		}
 	}
 
@@ -798,6 +831,68 @@ class PaymentEndToEndTest {
 		String traceId = JsonPath.read(line, "$.traceId");
 		assertThat((String) JsonPath.read(line, "$.spanId")).matches("[0-9a-f]{16}");
 		assertThat(spansOf(traceId)).extracting(SpanData::getName).contains("http post /payments");
+	}
+
+	// What Loki receives for a log line inside a request: the request's trace and span, and its correlationId.
+	@Test
+	void aLogLineInsideARequestIsExportedWithItsTraceAndCorrelationId() throws Exception {
+		String paymentId = JsonPath.read(mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString())
+						.header("X-Correlation-Id", "corr-bonus-06").contentType(MediaType.APPLICATION_JSON)
+						.content(paymentWithReference("Exported")).with(customer()))
+				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.paymentId");
+
+		LogRecordData created = exportedLine("Payment " + paymentId + " created");
+		assertThat(created.getAttributes().get(stringKey("correlationId"))).isEqualTo("corr-bonus-06");
+		assertThat(created.getSpanContext().getSpanId()).matches("[0-9a-f]{16}");
+		assertThat(spansOf(created.getSpanContext().getTraceId())).extracting(SpanData::getName).contains("http post /payments");
+	}
+
+	// The consumer's line, on another thread and after Kafka, is in the trace of the request that queued the payment:
+	// in Grafana, one trace ID finds both.
+	@Test
+	void theConsumersLogLineCarriesTheTraceOfTheRequestThatQueuedThePayment() throws Exception {
+		String paymentId = completedPayment("Exported from the consumer");
+
+		String queued = exportedLine("Payment " + paymentId + " queued for processing").getSpanContext().getTraceId();
+		String completed = exportedLine("Payment " + paymentId + " moved from PROCESSING to COMPLETED").getSpanContext().getTraceId();
+		assertThat(completed).isEqualTo(queued).isEqualTo(executeRequestSpan(paymentId).getTraceId());
+	}
+
+	// Episode 15's rule covers the log store: the same lines, kept and searchable by more people. Checked over every
+	// record the tests so far exported, plus a rejected payment.
+	@Test
+	void noExportedLogRecordCarriesAnAccountIdCustomerIdOrReference() throws Exception {
+		completedPayment("Not in any log");
+		mockMvc.perform(post("/payments").header("Idempotency-Key", UUID.randomUUID().toString())
+						.contentType(MediaType.APPLICATION_JSON).content("""
+						{ "sourceAccountId": "ACC-99999", "destinationAccountId": "ACC-20001", "amount": 250.00,
+						  "currency": "EUR", "reference": "Not in any log either" }
+						""").with(customer()))
+				.andExpect(status().isBadRequest());
+
+		await().until(() -> !logRecords.getFinishedLogRecordItems().isEmpty());
+		assertThat(logRecords.getFinishedLogRecordItems()).allSatisfy(record ->
+				assertThat(record.getBodyValue() + " " + record.getAttributes())
+						.doesNotContain("ACC-10001", "ACC-20001", "ACC-99999", "CUST-1001", "Not in any log"));
+	}
+
+	// The OTLP exporter is there and failing (port 9, see externalSystemUrls); the payment completes, and its lines
+	// still reach the console and every other exporter.
+	@Test
+	@ExtendWith(OutputCaptureExtension.class)
+	void aPaymentCompletesWhileLokiIsDown(CapturedOutput output) throws Exception {
+		assertThat(lokiExporters).hasSize(1);
+
+		String paymentId = completedPayment("Loki down");
+
+		await().untilAsserted(() -> assertThat(output.getOut()).contains("Payment " + paymentId + " moved from PROCESSING to COMPLETED"));
+		exportedLine("Payment " + paymentId + " moved from PROCESSING to COMPLETED");
+	}
+
+	// Records leave in batches, up to a second after the line was logged.
+	private LogRecordData exportedLine(String body) {
+		return await().until(() -> logRecords.getFinishedLogRecordItems().stream()
+				.filter(record -> body.equals(record.getBodyValue().asString())).findFirst(), Optional::isPresent).orElseThrow();
 	}
 
 	private ResultActions refund(String paymentId, String amount, RequestPostProcessor caller) throws Exception {

@@ -1,6 +1,6 @@
 # Bonus Episode 05 — Distributed Tracing
 
-Git tag: `bonus-05-distributed-tracing` · Builds on: [Bonus Episode 04 — Refunds](bonus-04-refunds.md)
+Git tag: `bonus-05-distributed-tracing` · Builds on: [Bonus Episode 04 — Refunds](bonus-04-refunds.md) · Next: [Bonus Episode 06 — Centralized Logs](bonus-06-centralized-logs.md)
 
 ## Goal
 

@@ -1,5 +1,20 @@
 apiVersion: 1
+# Bonus 05 gave Tempo no uid, so Grafana made one up and stored it; a container from then refuses the fixed uid the
+# Loki link needs (docs/episodes/bonus-06). Removed first, it is created again below with the uid.
+deleteDatasources:
+  - name: Tempo
+    orgId: 1
 datasources:
   - name: Tempo
+    uid: tempo
     type: tempo
     url: http://tempo:3200
+    # A span's "Logs for this span" opens Loki on its trace's lines (docs/episodes/bonus-06). trace_id is
+    # structured metadata, not a label, so it is a filter after a selector that matches every stream.
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        customQuery: true
+        query: '{service_name=~".+"} | trace_id="$${__trace.traceId}"'

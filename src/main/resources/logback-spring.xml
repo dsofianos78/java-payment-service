@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Every log line goes to two places (docs/episodes/bonus-06-centralized-logs.md):
+
+* CONSOLE: Episode 15's ECS JSON, unchanged (logging.structured.format.console). What `docker logs` and a developer
+  see, and everything there is when Loki is down.
+* OTEL: the same event handed to the OpenTelemetry logs SDK, which batches it and pushes it to Loki over OTLP.
+  OpenTelemetryLoggingConfiguration connects it to Boot's SDK at startup. The trace and span IDs come from the
+  current trace; of the MDC only correlationId is kept (traceId and spanId are there too, already sent natively).
+-->
+<configuration>
+	<include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+	<include resource="org/springframework/boot/logging/logback/structured-console-appender.xml"/>
+
+	<appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+		<captureMdcAttributes>correlationId</captureMdcAttributes>
+	</appender>
+
+	<root level="INFO">
+		<appender-ref ref="CONSOLE"/>
+		<appender-ref ref="OTEL"/>
+	</root>
+
+	<!-- The exporter's own complaints (Loki unreachable) go to the console only: sent through OTEL, each failed export
+	     would queue a record about itself. -->
+	<logger name="io.opentelemetry" additivity="false">
+		<appender-ref ref="CONSOLE"/>
+	</logger>
+</configuration>

@@ -21,6 +21,8 @@
 		<archunit.version>1.5.1</archunit.version>
 		<resilience4j.version>2.4.0</resilience4j.version>
 		<springdoc.version>3.1.1</springdoc.version>
+		<!-- The instrumentation release built on the OpenTelemetry SDK Boot manages (1.62.0). Boot doesn't manage it. -->
+		<opentelemetry-instrumentation.version>2.28.1-alpha</opentelemetry-instrumentation.version>
 	</properties>
 
 	<dependencyManagement>
@@ -103,6 +105,12 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-opentelemetry</artifactId>
+		</dependency>
+		<!-- Hands every Logback event to the OpenTelemetry logs SDK, which the starter exports to Loki over OTLP. -->
+		<dependency>
+			<groupId>io.opentelemetry.instrumentation</groupId>
+			<artifactId>opentelemetry-logback-appender-1.0</artifactId>
+			<version>${opentelemetry-instrumentation.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>

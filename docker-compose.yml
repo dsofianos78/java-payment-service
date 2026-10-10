@@ -24,6 +24,7 @@ services:
       LIMIT_SYSTEM_URL: http://account-system:8080
       PAYMENT_SYSTEM_URL: http://account-system:8080
       MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://loki:3100/otlp/v1/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,7 +107,17 @@ services:
     volumes:
       - ./observability/tempo.yaml:/etc/tempo.yaml:ro
 
-  # http://localhost:3000, anonymous admin, Prometheus and Tempo already set up as data sources. Local use only.
+  # Receives the service's log lines (docs/episodes/bonus-06) over OTLP on 3100, in its container or on the host,
+  # and keeps them 7 days. Grafana: Explore > Loki, {service_name="payment-service"}.
+  loki:
+    image: grafana/loki:3.5.7
+    command: ["-config.file=/etc/loki.yaml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki.yaml:/etc/loki.yaml:ro
+
+  # http://localhost:3000, anonymous admin, Prometheus, Tempo and Loki already set up as data sources. Local use only.
   grafana:
     image: grafana/grafana:12.2.1
     ports:

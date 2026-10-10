@@ -13,7 +13,7 @@ Requirements: Java 25 and Docker. Maven is provided by the wrapper.
 
 ```bash
 ./mvnw verify            # build and run all tests
-./mvnw spring-boot:run   # start on http://localhost:8080 (PostgreSQL, Kafka, a fake account system, Prometheus, Grafana and Tempo start from docker-compose.yml)
+./mvnw spring-boot:run   # start on http://localhost:8080 (PostgreSQL, Kafka, a fake account system, Prometheus, Grafana, Tempo and Loki start from docker-compose.yml)
 docker compose --profile app up --build   # or run the service itself in a container too, as in production
 ```
 
@@ -58,6 +58,7 @@ first, and build on it in order.
 | B3 | [Payment Events](docs/episodes/bonus-03-payment-events.md) | `bonus-03-payment-events` |
 | B4 | [Refunds](docs/episodes/bonus-04-refunds.md) | `bonus-04-refunds` |
 | B5 | [Distributed Tracing](docs/episodes/bonus-05-distributed-tracing.md) | `bonus-05-distributed-tracing` |
+| B6 | [Centralized Logs](docs/episodes/bonus-06-centralized-logs.md) | `bonus-06-centralized-logs` |
 
 ## License
 
